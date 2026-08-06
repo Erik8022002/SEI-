@@ -8,4 +8,13 @@ export default defineConfig({
             '@': decodeURIComponent(new URL('./src', import.meta.url).pathname),
         },
     },
+    server: {
+    proxy: {
+      '/api-proxy': {
+        target: 'https://cloud.geminidata.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy/, ''),
+      },
+    },
+  },
 });

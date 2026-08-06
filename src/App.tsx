@@ -14,6 +14,8 @@ import {
   type HistoricalEvent,
 } from './data'
 import conferenceData from './generated/investor-conferences.json'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const AdvancedStats = lazy(() => import('@/components/ui/advanced-stats'))
 type FinancialPeriod = 'quarter' | 'halfYear' | 'year'
@@ -170,9 +172,18 @@ function buildCompanyReport(company: Company, currentEvents: MaterialEvent[]) {
   ]
   return lines.join('\n')
 }
+// 依據 API 規範與範例程式碼設定常數
+// const API_BASE_URL = 'https://cloud.geminidata.com/api/v1/chat/'
+const API_BASE_URL = '/api-proxy/api/v1/chat/'
+const PROJECT_ID = '6a439e510763de002d27d689'
+const PROJECT_TOKEN =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzEzYjc0NGRkYTUzMDAyZDczMmQzOSIsImlzQVBJIjp0cnVlLCJnX3VpZCI6IjZhNDNhMDNiMDc2M2RlMDAyZDI3ZTA4YSIsImdfYWRtaW4iOmZhbHNlLCJnX2RlbW9hZG1pbiI6ZmFsc2UsImdfYWNjb3VudGFkbWluIjpmYWxzZSwiZ190aWQiOiI2YTQzOWU1MTA3NjNkZTAwMmQyN2Q2ODk6cHJvZHVjZXIiLCJnX3RpZF9wZXJtaXNzaW9uIjpbIm1ldGE6dXBkYXRlIiwic291cmNlOnJlYWQiLCJzb3VyY2U6dXBkYXRlIiwic291cmNlOmRlbGV0ZSIsImdyYXBoOnJlYWQiLCJncmFwaDp1cGRhdGUiLCJncmFwaDpkZWxldGUiLCJncmFwaDpleHBsb3JlIiwiZ3JhcGg6ZXhwb3J0IiwiY2FudmFzOmFubm90YXRlIiwiY2FudmFzOnBlcnNvbmFsaXplIiwiZGFzaGJvYXJkOnJlYWQiLCJkYXNoYm9hcmQ6dXBkYXRlIiwiY2FudmFzOnNoYXBlIl0sImdfdGlkX3BhcnNlcl9zb3VyY2UiOiJjc3YiLCJnX3RpZF9mZWF0dXJlX2FkZF9vbnMiOlsiYXNzaXN0YW50Il0sImdfYXZhdGFyIjoiMDIiLCJpc3MiOiJodHRwczovL2Nsb3VkLmdlbWluaWRhdGEuY29tIiwic3ViIjoiNmE0M2EwM2IwNzYzZGUwMDJkMjdlMDhhIiwiYXVkIjoiaHR0cHM6Ly9jbG91ZC5nZW1pbmlkYXRhLmNvbSIsImV4cCI6NDg2NjcwNTI4MiwiaWF0IjoxNzg1ODA1Njg0LCJuaWNrbmFtZSI6Im1lbWJlcjE2QDIwMjZzZWkuY29tIiwiZW1haWwiOiJtZW1iZXIxNkAyMDI2c2VpLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZX0.1ovav3QUrGMLPQ4EB_5zSOT6_UiEn32c3yG3FxKjE5k'
+
 
 function App() {
   const [company, setCompany] = useState(companies[0])
+  const [com, setCom] = useState([])
+  const [chatId, setChatId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>(readSearchHistory)
@@ -190,6 +201,7 @@ function App() {
   const [financialPeriod, setFinancialPeriod] = useState<FinancialPeriod>('year')
   const searchRef = useRef<HTMLDivElement>(null)
   const materialEvents = useMaterialEvents(company)
+  
 
   const profileResults = companies.filter((item) =>
     [item.name, item.englishName, item.ticker, item.taxId].some((value) => value.toLowerCase().includes(query.toLowerCase())),
@@ -283,18 +295,181 @@ function App() {
     if (next) chooseConferenceCompany(next)
   }
 
-  const ask = (text = question) => {
-    if (!text.trim() || thinking) return
-    const prompt = text.trim()
-    setQuestion('')
-    setChat((current) => [...current, { role: 'user', text: prompt }])
-    setThinking(true)
-    window.setTimeout(() => {
-      const answer = `${company.name}目前財務評分為 ${company.score} 分，${company.summary} 若以拜訪角度來看，建議優先聚焦「${company.opportunities[0]}」，並確認「${company.risks[0]}」對資金規劃的實際影響。`
-      setChat((current) => [...current, { role: 'assistant', text: answer }])
-      setThinking(false)
-    }, 900)
+  const ask = async (text = question) => {
+  if (!text.trim() || thinking) return
+  const prompt = text.trim()
+  setQuestion('')
+
+  const userMessageId = `user-${Date.now()}`
+  const assistantMessageId = `assistant-${Date.now()}`
+
+  // 1. 先將使用者訊息與空的 Assistant 訊息寫入 State
+  setChat((current) => [
+    ...current,
+    { id: userMessageId, role: 'user', text: prompt },
+    { id: assistantMessageId, role: 'assistant', text: '' },
+  ])
+  setThinking(true)
+
+  try {
+    let activeChatId = chatId
+    const headers = {
+      'Authorization': `Bearer ${PROJECT_TOKEN}`,
+      'x-application-tenant': PROJECT_ID,
+      'Content-Type': 'application/json',
+    }
+
+    // 2. 若當前沒有 Chat ID，先呼叫 /create 建立對話 Session
+    if (!activeChatId) {
+      const createRes = await fetch(`${API_BASE_URL}create`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          // title: `${company.name}`,
+          title: `Don`,
+        }),
+      })
+
+      if (!createRes.ok) {
+        const errText = await createRes.text()
+        throw new Error(`建立 Session 失敗 (HTTP ${createRes.status}): ${errText}`)
+      }
+
+      const createData = await createRes.json()
+
+      // 相容 { insertedId: "..." } 與 { data: { insertedId: "..." } } 兩種結構
+      activeChatId =
+        createData.insertedId ||
+        createData.data?.insertedId ||
+        createData.id ||
+        createData.chatId
+
+      if (!activeChatId) {
+        throw new Error(`伺服器未回傳有效的 Chat ID，回傳內容：${JSON.stringify(createData)}`)
+      }
+
+      setChatId(activeChatId)
+    }
+
+    // 防護機制：確保 URL 不會出現 undefined
+    if (!activeChatId) {
+      throw new Error('無法取得有效的 Chat ID，請重新嘗試')
+    }
+
+    // 3. 發送對話請求並開啟 Streaming
+    const response = await fetch(`${API_BASE_URL}${activeChatId}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        // q: `[關於 ${company.name} (${company.ticker})] ${prompt}`,
+        q: `${prompt}`,
+        streaming: true,
+      }),
+    })
+
+    if (!response.ok || !response.body) {
+      throw new Error(`HTTP 錯誤狀態: ${response.status}`)
+    }
+
+    // 4. 解析 SSE (Server-Sent Events) 串流資料
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || '' // 保留末尾未讀取完整的一行
+
+      for (const line of lines) {
+        const trimmedLine = line.trim()
+        if (!trimmedLine.startsWith('data: ')) continue
+
+        const jsonStr = trimmedLine.replace('data: ', '').trim()
+        if (!jsonStr) continue
+
+        try {
+          const parsed = JSON.parse(jsonStr)
+
+          // (A) 逐字串流：將 chunk 累加在既有內容後方 (打字機效果)
+          if (parsed.chunk !== undefined) {
+            setChat((current) =>
+              current.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, text: msg.text + parsed.chunk }
+                  : msg
+              )
+            )
+          }
+
+          // (B) 最終結果：收到 result 時直接覆蓋，確保標點與格式 100% 精確
+          if (parsed.result !== undefined) {
+            setChat((current) =>
+              current.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, text: parsed.result }
+                  : msg
+              )
+            )
+          }
+        } catch (e) {
+          // 忽略格式不完整的 JSON 片段，等待下一輪 buffer 組裝
+        }
+      }
+    }
+  } catch (error) {
+    console.error('AI 問答 API 呼叫失敗:', error)
+    setChat((current) =>
+      current.map((msg) =>
+        msg.id === assistantMessageId
+          ? {
+              ...msg,
+              text: `⚠️ 系統連線異常，無法完成回應。（${error instanceof Error ? error.message : '請稍後再試'}）`,
+            }
+          : msg
+      )
+    )
+  } finally {
+    setThinking(false)
   }
+}
+
+const getCompany = async () => {
+    try{
+      setCom([])
+      const res = await fetch ('https://www.tpex.org.tw/openapi/v1/tpex_mainborad_highlight',{
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+          'If-Modified-Since': 'Mon, 26 Jul 1997 05:00:00 GMT',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      })
+      const data = await res.json()
+      setCom(data)
+      console.log(com)
+    }
+    catch(error){
+      throw(error)
+    }
+  }
+
+  // const ask = (text = question) => {
+  //   if (!text.trim() || thinking) return
+  //   const prompt = text.trim()
+  //   setQuestion('')
+  //   setChat((current) => [...current, { role: 'user', text: prompt }])
+  //   setThinking(true)
+  //   window.setTimeout(() => {
+  //     const answer = `${company.name}目前財務評分為 ${company.score} 分，${company.summary} 若以拜訪角度來看，建議優先聚焦「${company.opportunities[0]}」，並確認「${company.risks[0]}」對資金規劃的實際影響。`
+  //     setChat((current) => [...current, { role: 'assistant', text: answer }])
+  //     setThinking(false)
+  //   }, 900)
+  // }
 
   const selectedStrategyMetrics = company.strategyMetrics.filter((metric) => strategyMetricIds.includes(metric.id))
   const strategyText = `【${company.name}｜拜訪戰略卡】\n公司速覽：${company.summary}\n財務體質：${selectedStrategyMetrics.map((metric) => `${metric.label} ${metric.value}`).join('；')}\n切入機會：${company.opportunities.join('；')}\n風險觀察：${company.risks.join('；')}\n建議提問：${company.questions.join('；')}`
@@ -498,7 +673,81 @@ function App() {
 
           <ConferenceCenter />
 
+          {/* AI 顧問區塊 */}
           <section id="advisor" className="advisor-section reveal">
+            <div className="advisor-intro">
+              <div className="eyebrow dark"><Bot size={14} /> AI 企業顧問</div>
+              <h2>有什麼想進一步了解？</h2>
+              <p>根據財報、重大訊息與產業資料，快速釐清機會與風險。</p>
+              <div className="suggestion-list">
+                {company.questions.map((item) => (
+                  <button key={item} onClick={() => ask(item)}>
+                    <MessageSquareText size={15} />{item}<ArrowRight size={14} />
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="chat-card">
+              <div className="chat-top">
+                <div>
+                  <span className="ai-orb"><Sparkles size={16} /></span>
+                  <div><b>商析 AI</b><small><i /> 已連結企業資料庫</small></div>
+                </div>
+              </div>
+              
+              <div className="chat-body">
+                {chat.length === 0 ? (
+                  <div className="chat-empty">
+                    <Bot size={27} />
+                    <p>可以問我財務表現、風險或拜訪切入點。</p>
+                  </div>
+                ) : (
+                  chat.map((message) => (
+                    <div key={message.id} className={`message ${message.role}`}>
+                      {message.role === 'assistant' ? (
+                        /* 🎯 AI 回應套用 ReactMarkdown 進行解析 */
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {message.text}
+                        </ReactMarkdown>
+                      ) : (
+                        /* 使用者自己的訊息維持純文字即可 */
+                        message.text
+                      )}
+                    </div>
+                  ))
+                )}
+                {thinking && <div className="typing"><i /><i /><i /></div>}
+              </div>
+              
+              <div className="chat-input">
+                <textarea
+                  rows={2}
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      ask()
+                    }
+                  }}
+                  // placeholder={`詢問關於 ${company.name} 的問題...`}
+                  placeholder={`詢問關於 金融 的問題...`}
+                />
+                <button
+                  disabled={!question.trim() || thinking}
+                  onClick={() => ask()}
+                  aria-label="送出"
+                >
+                  <Send size={18} />
+                </button>
+                <span>Enter 送出 · Shift + Enter 換行</span>
+              </div>
+            </div>
+          </section>
+
+
+          {/* <section id="advisor" className="advisor-section reveal">
             <div className="advisor-intro">
               <div className="eyebrow dark"><Bot size={14} /> AI 企業顧問</div>
               <h2>有什麼想進一步了解？</h2>
@@ -513,7 +762,7 @@ function App() {
               </div>
               <div className="chat-input"><textarea rows={2} value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); ask() } }} placeholder={`詢問關於 ${company.name} 的問題...`} /><button disabled={!question.trim() || thinking} onClick={() => ask()} aria-label="送出"><Send size={18} /></button><span>Enter 送出 · Shift + Enter 換行</span></div>
             </div>
-          </section>
+          </section> */}
 
           <section className="strategy-banner reveal">
             <div className="strategy-icon"><Target size={25} /></div>

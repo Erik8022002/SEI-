@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06130f"/><stop offset="1" stop-color="#173c30"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f4ca8a"/><stop offset="1" stop-color="#ad6a31"/></linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#2f7662"/><stop offset="1" stop-color="#102f27"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#d99b52" stop-opacity=".34"/><stop offset="1" stop-color="#d99b52" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="64" height="64" patternUnits="userSpaceOnUse"><path d="M64 0H0V64" fill="none" stroke="#c9e1d8" stroke-opacity=".05"/></pattern>
+    <filter id="glow"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/><rect width="1600" height="900" fill="url(#grid)"/>
+  <ellipse cx="1160" cy="440" rx="520" ry="430" fill="url(#halo)"/>
+  <g transform="translate(710 78)">
+    <polygon points="430,70 820,294 430,520 40,294" fill="#102e25" stroke="#9cc3b3" stroke-opacity=".34"/>
+    <polygon points="40,294 430,520 430,600 40,374" fill="#1e493b"/>
+    <polygon points="430,520 820,294 820,374 430,600" fill="#09221b"/>
+    <g transform="translate(165 135)">
+      <polygon points="0 48 240 0 240 177 0 227" fill="url(#screen)" stroke="#8fc1ae" stroke-width="3"/>
+      <path d="M27 176l40-48 39 14 43-77 54 29" fill="none" stroke="#f0bd72" stroke-width="8" stroke-linecap="round"/>
+      <path d="M29 38h92M29 62h60" stroke="#b8dbcd" stroke-width="7" opacity=".7"/>
+      <circle cx="203" cy="94" r="8" fill="#f0bd72" filter="url(#glow)"/>
+    </g>
+    <g transform="translate(466 120)">
+      <polygon points="0 0 210 48 210 218 0 170" fill="url(#screen)" stroke="#8fc1ae" stroke-width="3"/>
+      <circle cx="104" cy="105" r="53" fill="none" stroke="#79ad99" stroke-width="15" stroke-dasharray="96 45"/>
+      <circle cx="104" cy="105" r="21" fill="url(#gold)"/>
+    </g>
+    <g transform="translate(312 310)" filter="url(#glow)">
+      <ellipse cx="118" cy="92" rx="142" ry="83" fill="#0b241c" stroke="#9ec5b5" stroke-width="3"/>
+      <circle cx="118" cy="92" r="66" fill="none" stroke="#d99b52" stroke-width="5"/>
+      <path d="M118 30l21 50-21 18-21-18z" fill="url(#gold)"/><path d="M118 154l-15-48 15-12 15 12z" fill="#d8e8e1"/>
+      <circle cx="118" cy="92" r="10" fill="#f4ca8a"/>
+    </g>
+    <g fill="#214f40" stroke="#8fc1ae" stroke-opacity=".55">
+      <polygon points="98 370 216 306 300 355 182 421"/>
+      <polygon points="548 370 670 304 758 355 636 421"/>
+    </g>
+    <g fill="#f3c681" filter="url(#glow)"><circle cx="182" cy="373" r="7"/><circle cx="638" cy="374" r="7"/></g>
+  </g>
+</svg>

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06140f"/><stop offset="1" stop-color="#243625"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c4dfa8"/><stop offset="1" stop-color="#65874f"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f3c47e"/><stop offset="1" stop-color="#b37036"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#8fb274" stop-opacity=".32"/><stop offset="1" stop-color="#8fb274" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="70" height="70" patternUnits="userSpaceOnUse"><path d="M70 0H0V70" fill="none" stroke="#c4dfa8" stroke-opacity=".045"/></pattern>
+    <filter id="glow"><feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/><rect width="1600" height="900" fill="url(#grid)"/>
+  <ellipse cx="1160" cy="450" rx="500" ry="420" fill="url(#halo)"/>
+  <g transform="translate(730 105)">
+    <polygon points="410,45 790,263 410,482 30,263" fill="#16301e" stroke="#a4c98c" stroke-opacity=".35"/>
+    <polygon points="30,263 410,482 410,552 30,332" fill="#24442c"/>
+    <polygon points="410,482 790,263 790,332 410,552" fill="#0e2516"/>
+    <g fill="none" stroke="#83a96a" stroke-width="2" opacity=".42">
+      <ellipse cx="410" cy="300" rx="268" ry="155"/><ellipse cx="410" cy="300" rx="208" ry="120"/><path d="M142 300h536M410 145v310"/>
+    </g>
+    <path d="M170 373C255 326 283 369 351 318S497 198 635 228" fill="none" stroke="#f0bd72" stroke-width="8" stroke-linecap="round" stroke-dasharray="2 18" filter="url(#glow)"/>
+    <g transform="translate(410 300)" filter="url(#glow)">
+      <circle r="116" fill="#102819" stroke="#a9ce92" stroke-width="4"/>
+      <circle r="86" fill="none" stroke="#769b5e" stroke-width="3" stroke-dasharray="4 12"/>
+      <path d="M0-72L25-12 0 10-25-12z" fill="url(#gold)"/><path d="M0 72L-18 16 0-2 18 16z" fill="#d7e8cb" opacity=".8"/>
+      <circle r="14" fill="#f4c77f"/>
+    </g>
+    <g>
+      <g transform="translate(83 330)"><polygon points="0 35 70 0 140 38 70 75" fill="#34583b"/><polygon points="0 35 70 75 70 137 0 96" fill="#294a31"/><polygon points="70 75 140 38 140 98 70 137" fill="#172f1d"/><circle cx="70" cy="50" r="21" fill="url(#gold)"/></g>
+      <g transform="translate(590 150)"><polygon points="0 35 70 0 140 38 70 75" fill="#4f7248"/><polygon points="0 35 70 75 70 154 0 113" fill="#355c3c"/><polygon points="70 75 140 38 140 116 70 154" fill="#1c3823"/><path d="M70-48v75" stroke="#f0bd72" stroke-width="7"/><circle cx="70" cy="-58" r="21" fill="none" stroke="#f0bd72" stroke-width="7"/><circle cx="70" cy="-58" r="8" fill="#f0bd72"/></g>
+    </g>
+    <g fill="#bcd9a8" filter="url(#glow)"><circle cx="170" cy="373" r="8"/><circle cx="351" cy="318" r="8"/><circle cx="635" cy="228" r="8"/></g>
+  </g>
+</svg>

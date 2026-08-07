@@ -59,7 +59,7 @@ const DEFAULT_COMPANY: Company = {
   ticker: '',
   taxId: '',
   industry: '未分類',
-  market: '未上市',
+  market: '上市',
   location: '',
   founded: '',
   employees: '0',
@@ -99,7 +99,7 @@ export function normalizeCompany(raw: Partial<Company> | Record<string, unknown>
   const ticker = String(raw.ticker || raw['公司代號'] || raw.code || '')
   const taxId = String(raw.taxId || raw['營利事業統一編號'] || '')
   const industry = String(raw.industry || raw['產業別'] || DEFAULT_COMPANY.industry)
-  const market = String(raw.market || (raw['上櫃日期'] ? '上櫃' : DEFAULT_COMPANY.market))
+  const market = String(raw.market || (raw['上市日期'] ? '上市' : '上櫃') || DEFAULT_COMPANY.market)
   const location = String(raw.location || raw['住址'] || '')
   const founded = String(raw.founded || raw['成立日期'] || '')
   const employees = String(raw.employees || '')

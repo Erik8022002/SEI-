@@ -4,11 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "import:conferences": "node scripts/import-investor-conferences.mjs",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "predev": "npm run generate-data",
+    "prebuild": "npm run generate-data",
+    "generate-data": "tsx scripts/build-data.ts",
+    "dev": "next dev",
+    "build": "next build"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -29,13 +29,16 @@
   },
   "devDependencies": {
     "@eslint/js": "latest",
+    "@types/node": "^26.1.2",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "cheerio": "latest",
+    "csv-parse": "^7.0.2",
     "eslint": "latest",
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-react-refresh": "latest",
     "globals": "latest",
+    "tsx": "^4.23.10",
     "typescript-eslint": "latest"
   }
 }

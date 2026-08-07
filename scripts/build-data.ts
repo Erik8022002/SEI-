@@ -70,7 +70,7 @@ async function convertCsvToTs() {
       ticker: String(r['公司代號'] || ''),
       taxId: String(r['營利事業統一編號'] || ''),
       industry: String(r['產業別'] || ''),
-      market: r['上櫃日期'] ? '上櫃' : '',
+      market: r['上櫃日期'] ? '上櫃' : '上市',
       location: String(r['住址'] || ''),
       founded: String(r['成立日期'] || ''),
       employees: '',

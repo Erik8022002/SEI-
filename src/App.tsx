@@ -209,12 +209,11 @@ function buildCompanyReport(company: Company, currentEvents: MaterialEvent[]) {
 const API_BASE_URL = '/api-proxy/api/v1/chat/'
 const PROJECT_ID = '6a439e510763de002d27d689'
 const PROJECT_TOKEN =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzEzYjc0NGRkYTUzMDAyZDczMmQzOSIsImlzQVBJIjp0cnVlLCJnX3VpZCI6IjZhNDNhMDNiMDc2M2RlMDAyZDI3ZTA4YSIsImdfYWRtaW4iOmZhbHNlLCJnX2RlbW9hZG1pbiI6ZmFsc2UsImdfYWNjb3VudGFkbWluIjpmYWxzZX0.1ovav3QUrGMLPQ4EB_5zSOT6_UiEn32c3yG3FxKjE5k'
-
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzVhMGFjMDdmMmJiMDAyZGVlYjIxNyIsImlzQVBJIjp0cnVlLCJnX3VpZCI6IjZhNDNhMDNiMDc2M2RlMDAyZDI3ZTA4YSIsImdfYWRtaW4iOmZhbHNlLCJnX2RlbW9hZG1pbiI6ZmFsc2UsImdfYWNjb3VudGFkbWluIjpmYWxzZSwiZ190aWQiOiI2YTQzOWU1MTA3NjNkZTAwMmQyN2Q2ODk6cHJvZHVjZXIiLCJnX3RpZF9wZXJtaXNzaW9uIjpbIm1ldGE6dXBkYXRlIiwic291cmNlOnJlYWQiLCJzb3VyY2U6dXBkYXRlIiwic291cmNlOmRlbGV0ZSIsImdyYXBoOnJlYWQiLCJncmFwaDp1cGRhdGUiLCJncmFwaDpkZWxldGUiLCJncmFwaDpleHBsb3JlIiwiZ3JhcGg6ZXhwb3J0IiwiY2FudmFzOmFubm90YXRlIiwiY2FudmFzOnBlcnNvbmFsaXplIiwiZGFzaGJvYXJkOnJlYWQiLCJkYXNoYm9hcmQ6dXBkYXRlIiwiY2FudmFzOnNoYXBlIl0sImdfdGlkX3BhcnNlcl9zb3VyY2UiOiJjc3YiLCJnX3RpZF9mZWF0dXJlX2FkZF9vbnMiOlsiYXNzaXN0YW50Il0sImdfYXZhdGFyIjoiMDIiLCJpc3MiOiJodHRwczovL2Nsb3VkLmdlbWluaWRhdGEuY29tIiwic3ViIjoiNmE0M2EwM2IwNzYzZGUwMDJkMjdlMDhhIiwiYXVkIjoiaHR0cHM6Ly9jbG91ZC5nZW1pbmlkYXRhLmNvbSIsImV4cCI6MTc4NjE4MDEzNiwiaWF0IjoxNzg2MDkzNzQwLCJuaWNrbmFtZSI6Im1lbWJlcjE2QDIwMjZzZWkuY29tIiwiZW1haWwiOiJtZW1iZXIxNkAyMDI2c2VpLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZX0.cu9GHxi0v9kL7W_FqKXg74yhKKpYKMl_-bUWBF4bik0'
 function App() {
+  const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [companyList] = useState<Company[]>(initialCompanies)
   const [company, setCompany] = useState<Company>(initialCompanies[0])
-  
   const [chatId, setChatId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -326,6 +325,10 @@ function App() {
     if (next) chooseConferenceCompany(next)
   }
 
+  const exportReport = async () => {
+    
+  }
+
   const ask = async (text = question) => {
     if (!text.trim() || thinking) return
     const prompt = text.trim()
@@ -341,15 +344,18 @@ function App() {
     ])
     setThinking(true)
 
+    // 1. 使用區域變數追蹤最新的 Chat ID，避免 React State 非同步落差
+    let currentChatId = activeChatId || chatId
+
     try {
-      let activeChatId = chatId
       const headers = {
         'Authorization': `Bearer ${PROJECT_TOKEN}`,
         'x-application-tenant': PROJECT_ID,
         'Content-Type': 'application/json',
       }
 
-      if (!activeChatId) {
+      // 2. 建立 Chat Session（如果當前沒有 ID）
+      if (!currentChatId) {
         const createRes = await fetch(`${API_BASE_URL}create`, {
           method: 'POST',
           headers,
@@ -365,28 +371,29 @@ function App() {
 
         const createData = await createRes.json()
 
-        activeChatId =
+        currentChatId =
           createData.insertedId ||
           createData.data?.insertedId ||
           createData.id ||
           createData.chatId
 
-        if (!activeChatId) {
+        if (!currentChatId) {
           throw new Error(`伺服器未回傳有效的 Chat ID，回傳內容：${JSON.stringify(createData)}`)
         }
 
-        setChatId(activeChatId)
+        // 同步更新外部 React State 供下次使用
+        setActiveChatId(currentChatId)
+        if (typeof setChatId === 'function') {
+          setChatId(currentChatId)
+        }
       }
 
-      if (!activeChatId) {
-        throw new Error('無法取得有效的 Chat ID，請重新嘗試')
-      }
-
-      const response = await fetch(`${API_BASE_URL}${activeChatId}`, {
+      // 3. 發送問答 API 請求
+      const response = await fetch(`${API_BASE_URL}${currentChatId}`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          q: `${prompt}`,
+          q: prompt,
           streaming: true,
         }),
       })
@@ -398,48 +405,81 @@ function App() {
       const reader = response.body.getReader()
       const decoder = new TextDecoder('utf-8')
       let buffer = ''
+      let accumulatedText = '' // 區域累積變數，降低 React 重新渲染頻率
 
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
+      try {
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
 
-        for (const line of lines) {
-          const trimmedLine = line.trim()
-          if (!trimmedLine.startsWith('data: ')) continue
+          let hasNewContent = false
 
-          const jsonStr = trimmedLine.replace('data: ', '').trim()
-          if (!jsonStr) continue
+          for (const line of lines) {
+            const trimmedLine = line.trim()
+            if (!trimmedLine.startsWith('data:')) continue
 
-          try {
-            const parsed = JSON.parse(jsonStr)
+            const jsonStr = trimmedLine.replace(/^data:\s*/, '').trim()
+            // 排除空行與 SSE 的 [DONE] 結束標記
+            if (!jsonStr || jsonStr === '[DONE]') continue
 
-            if (parsed.chunk !== undefined) {
-              setChat((current) =>
-                current.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? { ...msg, text: msg.text + parsed.chunk }
-                    : msg
-                )
-              )
+            try {
+              const parsed = JSON.parse(jsonStr)
+
+              if (parsed.chunk !== undefined) {
+                accumulatedText += parsed.chunk
+                hasNewContent = true
+              } else if (parsed.result !== undefined) {
+                accumulatedText = parsed.result
+                hasNewContent = true
+              }
+            } catch {
+              // 忽略格式不完整的 JSON 片段
             }
+          }
 
-            if (parsed.result !== undefined) {
-              setChat((current) =>
-                current.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? { ...msg, text: parsed.result }
-                    : msg
-                )
+          // 每個封包 (Chunk) 讀取完畢後僅更新一次 State
+          if (hasNewContent) {
+            setChat((current) =>
+              current.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, text: accumulatedText }
+                  : msg
               )
-            }
-          } catch {
-            // 忽略非完整 JSON
+            )
           }
         }
+
+        // 4. 處理 Stream 結束後 buffer 中剩餘的最後一行數據
+        if (buffer.trim().startsWith('data:')) {
+          const jsonStr = buffer.trim().replace(/^data:\s*/, '').trim()
+          if (jsonStr && jsonStr !== '[DONE]') {
+            try {
+              const parsed = JSON.parse(jsonStr)
+              if (parsed.chunk !== undefined) {
+                accumulatedText += parsed.chunk
+              } else if (parsed.result !== undefined) {
+                accumulatedText = parsed.result
+              }
+
+              setChat((current) =>
+                current.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { ...msg, text: accumulatedText }
+                    : msg
+                )
+              )
+            } catch {
+              // 忽略尾端無效數據
+            }
+          }
+        }
+      } finally {
+        // 確保釋放 Reader 鎖
+        reader.releaseLock()
       }
     } catch (error) {
       console.error('AI 問答 API 呼叫失敗:', error)
@@ -479,20 +519,146 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
-  const exportCompanyReport = () => {
-    const report = buildCompanyReport(company, materialEvents.events)
-    const blob = new Blob([report], { type: 'text/markdown;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `${company.name}-${company.ticker}-企業情報完整報告.md`
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
-    setExported(true)
-    window.setTimeout(() => setExported(false), 1800)
+  const exportCompanyReport = async () => {
+  const prompt = `生成 ${company.name} 的財務報告`
+  const headers = {
+    'Authorization': `Bearer ${PROJECT_TOKEN}`,
+    'x-application-tenant': PROJECT_ID,
+    'Content-Type': 'application/json',
   }
+
+  // 1. 使用區域變數記錄當前的 Chat ID，解決 React State 非同步落差問題
+  let currentChatId = activeChatId || chatId
+
+  // 2. 若無有效的 Chat ID，呼叫 API 建立 Session
+  if (!currentChatId) {
+    const createRes = await fetch(`${API_BASE_URL}create`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        title: `Don`,
+      }),
+    })
+
+    if (!createRes.ok) {
+      const errText = await createRes.text()
+      throw new Error(`建立 Session 失敗 (HTTP ${createRes.status}): ${errText}`)
+    }
+
+    const createData = await createRes.json()
+
+    // 取得新 ID 並賦值給區域變數
+    currentChatId =
+      createData.insertedId ||
+      createData.data?.insertedId ||
+      createData.id ||
+      createData.chatId
+
+    if (!currentChatId) {
+      throw new Error(`伺服器未回傳有效的 Chat ID，回傳內容：${JSON.stringify(createData)}`)
+    }
+
+    // 更新 React State（供後續 UI 或元件渲染使用）
+    setActiveChatId(currentChatId)
+    if (typeof setChatId === 'function') {
+      setChatId(currentChatId)
+    }
+  }
+
+  // 3. 發送請求（使用確保有值的 currentChatId）
+  const response = await fetch(`${API_BASE_URL}${currentChatId}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      q: prompt,
+      streaming: true,
+    }),
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`HTTP 錯誤狀態: ${response.status}`)
+  }
+
+  // 4. 解析 SSE 串流，精準提取 result 或累積 chunk 內容
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalResult = ''
+  let accumulatedChunks = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmedLine = line.trim()
+        if (!trimmedLine.startsWith('data:')) continue
+
+        const jsonStr = trimmedLine.replace(/^data:\s*/, '').trim()
+        if (!jsonStr || jsonStr === '[DONE]') continue
+
+        try {
+          const parsed = JSON.parse(jsonStr)
+
+          // 優先捕捉伺服器回傳的完整 result
+          if (parsed.result !== undefined) {
+            finalResult = parsed.result
+          } 
+          // 備用：若無 result，則累積逐字 chunk
+          else if (parsed.chunk !== undefined) {
+            accumulatedChunks += parsed.chunk
+          }
+        } catch {
+          // 忽略非完整 JSON 片段
+        }
+      }
+    }
+
+    // 處理迴圈結束後 buffer 內殘留的最後一行
+    if (buffer.trim().startsWith('data:')) {
+      const jsonStr = buffer.trim().replace(/^data:\s*/, '').trim()
+      if (jsonStr && jsonStr !== '[DONE]') {
+        try {
+          const parsed = JSON.parse(jsonStr)
+          if (parsed.result !== undefined) {
+            finalResult = parsed.result
+          } else if (parsed.chunk !== undefined) {
+            accumulatedChunks += parsed.chunk
+          }
+        } catch {}
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  // 最終要輸出的 Markdown 內容（優先採用 result，若無則用 chunk 拼起來）
+  const reportText = finalResult || accumulatedChunks
+
+  if (!reportText.trim()) {
+    throw new Error('伺服器未回傳有效的報告內容')
+  }
+
+  // 5. 將完整的 Markdown 文字放入 Blob 進行下載
+  const blob = new Blob([reportText], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${company.name}-${company.ticker}-企業情報完整報告.md`
+  
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  setExported(true)
+  window.setTimeout(() => setExported(false), 1800)
+}
 
   return (
     <div className="app-shell">

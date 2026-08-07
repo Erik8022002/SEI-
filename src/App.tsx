@@ -7,7 +7,7 @@ import {
   Video, X,
 } from 'lucide-react'
 import {
-  companies,
+  companies as initialCompanies,
   suggestedSearches,
   type Company,
   type Event as MaterialEvent,
@@ -16,6 +16,39 @@ import {
 import conferenceData from './generated/investor-conferences.json'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+
+type RawConference = Record<string, unknown>
+type ConferenceItem = {
+  date: string
+  time: string
+  companyCode: string
+  companyName: string
+  market?: string
+  summary: string
+  location?: string
+  presentationZh?: string
+  videos: string[]
+  website?: string
+}
+
+const rawConferences = (conferenceData as { conferences?: RawConference[] }).conferences ?? []
+const conferences: ConferenceItem[] = rawConferences.map((c) => {
+  const anyC = c as Record<string, unknown>
+  const companyCode = String((anyC['公司代號'] ?? anyC['companyCode'] ?? anyC['code']) ?? '')
+  const companyName = String((anyC['公司名稱'] ?? anyC['公司簡稱'] ?? anyC['companyName'] ?? anyC['name']) ?? '')
+  const date = String((anyC['出表日期'] ?? anyC['date']) ?? '')
+  const time = String((anyC['time'] ?? anyC['時間']) ?? '')
+  const summary = String((anyC['summary'] ?? anyC['內容'] ?? anyC['簡介']) ?? '')
+  const location = String((anyC['location'] ?? anyC['地點']) ?? '')
+  const presentationZh = String((anyC['presentationZh'] ?? anyC['presentationZhUrl']) ?? '')
+  const vids = anyC['videos']
+  const videos = Array.isArray(vids) ? vids.map((v) => String(v)) : (vids ? [String(vids)] : [])
+  const website = String((anyC['website'] ?? anyC['網址']) ?? '')
+  const market = String((anyC['market'] ?? anyC['市場']) ?? '')
+  return { date, time, companyCode, companyName, summary, location, presentationZh, videos, website, market }
+})
+
+const conferenceCompanies = ((conferenceData as unknown) as { companies?: Array<{ code: string; name: string; conferenceCount: number; group?: string; note?: string }> }).companies ?? []
 
 const AdvancedStats = lazy(() => import('@/components/ui/advanced-stats'))
 type FinancialPeriod = 'quarter' | 'halfYear' | 'year'
@@ -115,7 +148,7 @@ function useMaterialEvents(company: Company) {
 }
 
 function buildCompanyReport(company: Company, currentEvents: MaterialEvent[]) {
-  const companyConferences = conferenceData.conferences.filter((item) => item.companyCode === company.ticker)
+  const companyConferences = conferences.filter((item) => item.companyCode === company.ticker)
   const lines = [
     `# ${company.name}｜企業情報完整報告`,
     '',
@@ -172,17 +205,16 @@ function buildCompanyReport(company: Company, currentEvents: MaterialEvent[]) {
   ]
   return lines.join('\n')
 }
-// 依據 API 規範與範例程式碼設定常數
-// const API_BASE_URL = 'https://cloud.geminidata.com/api/v1/chat/'
+
 const API_BASE_URL = '/api-proxy/api/v1/chat/'
 const PROJECT_ID = '6a439e510763de002d27d689'
 const PROJECT_TOKEN =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzEzYjc0NGRkYTUzMDAyZDczMmQzOSIsImlzQVBJIjp0cnVlLCJnX3VpZCI6IjZhNDNhMDNiMDc2M2RlMDAyZDI3ZTA4YSIsImdfYWRtaW4iOmZhbHNlLCJnX2RlbW9hZG1pbiI6ZmFsc2UsImdfYWNjb3VudGFkbWluIjpmYWxzZSwiZ190aWQiOiI2YTQzOWU1MTA3NjNkZTAwMmQyN2Q2ODk6cHJvZHVjZXIiLCJnX3RpZF9wZXJtaXNzaW9uIjpbIm1ldGE6dXBkYXRlIiwic291cmNlOnJlYWQiLCJzb3VyY2U6dXBkYXRlIiwic291cmNlOmRlbGV0ZSIsImdyYXBoOnJlYWQiLCJncmFwaDp1cGRhdGUiLCJncmFwaDpkZWxldGUiLCJncmFwaDpleHBsb3JlIiwiZ3JhcGg6ZXhwb3J0IiwiY2FudmFzOmFubm90YXRlIiwiY2FudmFzOnBlcnNvbmFsaXplIiwiZGFzaGJvYXJkOnJlYWQiLCJkYXNoYm9hcmQ6dXBkYXRlIiwiY2FudmFzOnNoYXBlIl0sImdfdGlkX3BhcnNlcl9zb3VyY2UiOiJjc3YiLCJnX3RpZF9mZWF0dXJlX2FkZF9vbnMiOlsiYXNzaXN0YW50Il0sImdfYXZhdGFyIjoiMDIiLCJpc3MiOiJodHRwczovL2Nsb3VkLmdlbWluaWRhdGEuY29tIiwic3ViIjoiNmE0M2EwM2IwNzYzZGUwMDJkMjdlMDhhIiwiYXVkIjoiaHR0cHM6Ly9jbG91ZC5nZW1pbmlkYXRhLmNvbSIsImV4cCI6NDg2NjcwNTI4MiwiaWF0IjoxNzg1ODA1Njg0LCJuaWNrbmFtZSI6Im1lbWJlcjE2QDIwMjZzZWkuY29tIiwiZW1haWwiOiJtZW1iZXIxNkAyMDI2c2VpLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZX0.1ovav3QUrGMLPQ4EB_5zSOT6_UiEn32c3yG3FxKjE5k'
-
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzEzYjc0NGRkYTUzMDAyZDczMmQzOSIsImlzQVBJIjp0cnVlLCJnX3VpZCI6IjZhNDNhMDNiMDc2M2RlMDAyZDI3ZTA4YSIsImdfYWRtaW4iOmZhbHNlLCJnX2RlbW9hZG1pbiI6ZmFsc2UsImdfYWNjb3VudGFkbWluIjpmYWxzZX0.1ovav3QUrGMLPQ4EB_5zSOT6_UiEn32c3yG3FxKjE5k'
 
 function App() {
-  const [company, setCompany] = useState(companies[0])
-  const [com, setCom] = useState([])
+  const [companyList] = useState<Company[]>(initialCompanies)
+  const [company, setCompany] = useState<Company>(initialCompanies[0])
+  
   const [chatId, setChatId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -190,7 +222,7 @@ function App() {
   const [eventMode, setEventMode] = useState<EventMode>('realtime')
   const [eventFilter, setEventFilter] = useState('全部')
   const [question, setQuestion] = useState('')
-  const [chat, setChat] = useState<{ role: 'user' | 'assistant'; text: string }[]>([])
+  const [chat, setChat] = useState<{ id?: string; role: 'user' | 'assistant'; text: string }[]>([])
   const [thinking, setThinking] = useState(false)
   const [strategyOpen, setStrategyOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -201,12 +233,11 @@ function App() {
   const [financialPeriod, setFinancialPeriod] = useState<FinancialPeriod>('year')
   const searchRef = useRef<HTMLDivElement>(null)
   const materialEvents = useMaterialEvents(company)
-  
 
-  const profileResults = companies.filter((item) =>
+  const profileResults = companyList.filter((item) =>
     [item.name, item.englishName, item.ticker, item.taxId].some((value) => value.toLowerCase().includes(query.toLowerCase())),
   )
-  const conferenceResults = conferenceData.companies.filter((item) =>
+  const conferenceResults = conferenceCompanies.filter((item: { name: string; code: string }) =>
     [item.name, item.code].some((value) => value.toLowerCase().includes(query.toLowerCase())),
   )
   const resultCount = profileResults.length + conferenceResults.length
@@ -269,7 +300,7 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const chooseConferenceCompany = (next: (typeof conferenceData.companies)[number]) => {
+  const chooseConferenceCompany = (next: { code: string; name: string; conferenceCount: number; group?: string; note?: string }) => {
     rememberSearch({
       id: `conference-${next.code}`,
       type: 'conference',
@@ -287,189 +318,147 @@ function App() {
 
   const repeatSearch = (item: SearchHistoryItem) => {
     if (item.type === 'company') {
-      const next = companies.find((entry) => entry.id === item.companyId)
+      const next = companyList.find((entry) => entry.id === item.companyId)
       if (next) chooseCompany(next)
       return
     }
-    const next = conferenceData.companies.find((entry) => entry.code === item.code && entry.group === item.group)
+    const next = conferenceCompanies.find((entry: { code: string; group?: string }) => entry.code === item.code && entry.group === item.group)
     if (next) chooseConferenceCompany(next)
   }
 
   const ask = async (text = question) => {
-  if (!text.trim() || thinking) return
-  const prompt = text.trim()
-  setQuestion('')
+    if (!text.trim() || thinking) return
+    const prompt = text.trim()
+    setQuestion('')
 
-  const userMessageId = `user-${Date.now()}`
-  const assistantMessageId = `assistant-${Date.now()}`
+    const userMessageId = `user-${Date.now()}`
+    const assistantMessageId = `assistant-${Date.now()}`
 
-  // 1. 先將使用者訊息與空的 Assistant 訊息寫入 State
-  setChat((current) => [
-    ...current,
-    { id: userMessageId, role: 'user', text: prompt },
-    { id: assistantMessageId, role: 'assistant', text: '' },
-  ])
-  setThinking(true)
+    setChat((current) => [
+      ...current,
+      { id: userMessageId, role: 'user', text: prompt },
+      { id: assistantMessageId, role: 'assistant', text: '' },
+    ])
+    setThinking(true)
 
-  try {
-    let activeChatId = chatId
-    const headers = {
-      'Authorization': `Bearer ${PROJECT_TOKEN}`,
-      'x-application-tenant': PROJECT_ID,
-      'Content-Type': 'application/json',
-    }
+    try {
+      let activeChatId = chatId
+      const headers = {
+        'Authorization': `Bearer ${PROJECT_TOKEN}`,
+        'x-application-tenant': PROJECT_ID,
+        'Content-Type': 'application/json',
+      }
 
-    // 2. 若當前沒有 Chat ID，先呼叫 /create 建立對話 Session
-    if (!activeChatId) {
-      const createRes = await fetch(`${API_BASE_URL}create`, {
+      if (!activeChatId) {
+        const createRes = await fetch(`${API_BASE_URL}create`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            title: `Don`,
+          }),
+        })
+
+        if (!createRes.ok) {
+          const errText = await createRes.text()
+          throw new Error(`建立 Session 失敗 (HTTP ${createRes.status}): ${errText}`)
+        }
+
+        const createData = await createRes.json()
+
+        activeChatId =
+          createData.insertedId ||
+          createData.data?.insertedId ||
+          createData.id ||
+          createData.chatId
+
+        if (!activeChatId) {
+          throw new Error(`伺服器未回傳有效的 Chat ID，回傳內容：${JSON.stringify(createData)}`)
+        }
+
+        setChatId(activeChatId)
+      }
+
+      if (!activeChatId) {
+        throw new Error('無法取得有效的 Chat ID，請重新嘗試')
+      }
+
+      const response = await fetch(`${API_BASE_URL}${activeChatId}`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          // title: `${company.name}`,
-          title: `Don`,
+          q: `${prompt}`,
+          streaming: true,
         }),
       })
 
-      if (!createRes.ok) {
-        const errText = await createRes.text()
-        throw new Error(`建立 Session 失敗 (HTTP ${createRes.status}): ${errText}`)
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP 錯誤狀態: ${response.status}`)
       }
 
-      const createData = await createRes.json()
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let buffer = ''
 
-      // 相容 { insertedId: "..." } 與 { data: { insertedId: "..." } } 兩種結構
-      activeChatId =
-        createData.insertedId ||
-        createData.data?.insertedId ||
-        createData.id ||
-        createData.chatId
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
 
-      if (!activeChatId) {
-        throw new Error(`伺服器未回傳有效的 Chat ID，回傳內容：${JSON.stringify(createData)}`)
-      }
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
 
-      setChatId(activeChatId)
-    }
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (!trimmedLine.startsWith('data: ')) continue
 
-    // 防護機制：確保 URL 不會出現 undefined
-    if (!activeChatId) {
-      throw new Error('無法取得有效的 Chat ID，請重新嘗試')
-    }
+          const jsonStr = trimmedLine.replace('data: ', '').trim()
+          if (!jsonStr) continue
 
-    // 3. 發送對話請求並開啟 Streaming
-    const response = await fetch(`${API_BASE_URL}${activeChatId}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        // q: `[關於 ${company.name} (${company.ticker})] ${prompt}`,
-        q: `${prompt}`,
-        streaming: true,
-      }),
-    })
+          try {
+            const parsed = JSON.parse(jsonStr)
 
-    if (!response.ok || !response.body) {
-      throw new Error(`HTTP 錯誤狀態: ${response.status}`)
-    }
-
-    // 4. 解析 SSE (Server-Sent Events) 串流資料
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || '' // 保留末尾未讀取完整的一行
-
-      for (const line of lines) {
-        const trimmedLine = line.trim()
-        if (!trimmedLine.startsWith('data: ')) continue
-
-        const jsonStr = trimmedLine.replace('data: ', '').trim()
-        if (!jsonStr) continue
-
-        try {
-          const parsed = JSON.parse(jsonStr)
-
-          // (A) 逐字串流：將 chunk 累加在既有內容後方 (打字機效果)
-          if (parsed.chunk !== undefined) {
-            setChat((current) =>
-              current.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, text: msg.text + parsed.chunk }
-                  : msg
+            if (parsed.chunk !== undefined) {
+              setChat((current) =>
+                current.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { ...msg, text: msg.text + parsed.chunk }
+                    : msg
+                )
               )
-            )
-          }
-
-          // (B) 最終結果：收到 result 時直接覆蓋，確保標點與格式 100% 精確
-          if (parsed.result !== undefined) {
-            setChat((current) =>
-              current.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, text: parsed.result }
-                  : msg
-              )
-            )
-          }
-        } catch (e) {
-          // 忽略格式不完整的 JSON 片段，等待下一輪 buffer 組裝
-        }
-      }
-    }
-  } catch (error) {
-    console.error('AI 問答 API 呼叫失敗:', error)
-    setChat((current) =>
-      current.map((msg) =>
-        msg.id === assistantMessageId
-          ? {
-              ...msg,
-              text: `⚠️ 系統連線異常，無法完成回應。（${error instanceof Error ? error.message : '請稍後再試'}）`,
             }
-          : msg
-      )
-    )
-  } finally {
-    setThinking(false)
-  }
-}
 
-const getCompany = async () => {
-    try{
-      setCom([])
-      const res = await fetch ('https://www.tpex.org.tw/openapi/v1/tpex_mainborad_highlight',{
-        method: 'GET',
-        headers: {
-          'accept': 'application/json',
-          'If-Modified-Since': 'Mon, 26 Jul 1997 05:00:00 GMT',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
+            if (parsed.result !== undefined) {
+              setChat((current) =>
+                current.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { ...msg, text: parsed.result }
+                    : msg
+                )
+              )
+            }
+          } catch {
+            // 忽略非完整 JSON
+          }
         }
-      })
-      const data = await res.json()
-      setCom(data)
-      console.log(com)
-    }
-    catch(error){
-      throw(error)
+      }
+    } catch (error) {
+      console.error('AI 問答 API 呼叫失敗:', error)
+      setChat((current) =>
+        current.map((msg) =>
+          msg.id === assistantMessageId
+            ? {
+                ...msg,
+                text: `⚠️ 系統連線異常，無法完成回應。（${error instanceof Error ? error.message : '請稍後再試'}）`,
+              }
+            : msg
+        )
+      )
+    } finally {
+      setThinking(false)
     }
   }
 
-  // const ask = (text = question) => {
-  //   if (!text.trim() || thinking) return
-  //   const prompt = text.trim()
-  //   setQuestion('')
-  //   setChat((current) => [...current, { role: 'user', text: prompt }])
-  //   setThinking(true)
-  //   window.setTimeout(() => {
-  //     const answer = `${company.name}目前財務評分為 ${company.score} 分，${company.summary} 若以拜訪角度來看，建議優先聚焦「${company.opportunities[0]}」，並確認「${company.risks[0]}」對資金規劃的實際影響。`
-  //     setChat((current) => [...current, { role: 'assistant', text: answer }])
-  //     setThinking(false)
-  //   }, 900)
-  // }
+  
 
   const selectedStrategyMetrics = company.strategyMetrics.filter((metric) => strategyMetricIds.includes(metric.id))
   const strategyText = `【${company.name}｜拜訪戰略卡】\n公司速覽：${company.summary}\n財務體質：${selectedStrategyMetrics.map((metric) => `${metric.label} ${metric.value}`).join('；')}\n切入機會：${company.opportunities.join('；')}\n風險觀察：${company.risks.join('；')}\n建議提問：${company.questions.join('；')}`
@@ -563,14 +552,14 @@ const getCompany = async () => {
                   )}
                   {query && <div className="results-label">搜尋結果 · {resultCount}</div>}
                   {!query && searchHistory.length === 0 && <div className="results-label">建議企業</div>}
-                  {(query ? profileResults : companies).map((item) => (
+                  {(query ? profileResults : companyList).slice(0, 5).map((item) => (
                     <button key={item.id} onClick={() => chooseCompany(item)}>
                       <span className="result-icon"><Building2 size={17} /></span>
                       <span><b>{item.name}</b><small>{item.ticker} · 完整企業分析</small></span>
                       <span className="result-market">{item.market}</span>
                     </button>
                   ))}
-                  {query && conferenceResults.map((item) => (
+                  {query && conferenceResults.slice(0, 5).map((item) => (
                     <button key={`conference-${item.code}`} onClick={() => chooseConferenceCompany(item)}>
                       <span className="result-icon conference-result-icon"><Presentation size={17} /></span>
                       <span><b>{item.name}</b><small>{item.code} · 已匯入 {item.conferenceCount} 場法說會</small></span>
@@ -703,15 +692,13 @@ const getCompany = async () => {
                     <p>可以問我財務表現、風險或拜訪切入點。</p>
                   </div>
                 ) : (
-                  chat.map((message) => (
-                    <div key={message.id} className={`message ${message.role}`}>
+                  chat.map((message, index) => (
+                    <div key={message.id || index} className={`message ${message.role}`}>
                       {message.role === 'assistant' ? (
-                        /* 🎯 AI 回應套用 ReactMarkdown 進行解析 */
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {message.text}
                         </ReactMarkdown>
                       ) : (
-                        /* 使用者自己的訊息維持純文字即可 */
                         message.text
                       )}
                     </div>
@@ -731,7 +718,6 @@ const getCompany = async () => {
                       ask()
                     }
                   }}
-                  // placeholder={`詢問關於 ${company.name} 的問題...`}
                   placeholder={`詢問關於 金融 的問題...`}
                 />
                 <button
@@ -745,24 +731,6 @@ const getCompany = async () => {
               </div>
             </div>
           </section>
-
-
-          {/* <section id="advisor" className="advisor-section reveal">
-            <div className="advisor-intro">
-              <div className="eyebrow dark"><Bot size={14} /> AI 企業顧問</div>
-              <h2>有什麼想進一步了解？</h2>
-              <p>根據財報、重大訊息與產業資料，快速釐清機會與風險。</p>
-              <div className="suggestion-list">{company.questions.map((item) => <button key={item} onClick={() => ask(item)}><MessageSquareText size={15} />{item}<ArrowRight size={14} /></button>)}</div>
-            </div>
-            <div className="chat-card">
-              <div className="chat-top"><div><span className="ai-orb"><Sparkles size={16} /></span><div><b>商析 AI</b><small><i /> 已連結企業資料庫</small></div></div><button title="清除對話" onClick={() => setChat([])}><RefreshCw size={15} /></button></div>
-              <div className="chat-body">
-                {chat.length === 0 ? <div className="chat-empty"><Bot size={27} /><p>我已讀取 <b>{company.name}</b> 的最新資料。<br />可以問我財務表現、風險或拜訪切入點。</p></div> : chat.map((message, index) => <div key={index} className={`message ${message.role}`}>{message.text}</div>)}
-                {thinking && <div className="typing"><i /><i /><i /></div>}
-              </div>
-              <div className="chat-input"><textarea rows={2} value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); ask() } }} placeholder={`詢問關於 ${company.name} 的問題...`} /><button disabled={!question.trim() || thinking} onClick={() => ask()} aria-label="送出"><Send size={18} /></button><span>Enter 送出 · Shift + Enter 換行</span></div>
-            </div>
-          </section> */}
 
           <section className="strategy-banner reveal">
             <div className="strategy-icon"><Target size={25} /></div>
@@ -790,9 +758,9 @@ function ConferenceCenter() {
   const [group, setGroup] = useState('PCB')
   const [companyCode, setCompanyCode] = useState('全部')
   const [showAll, setShowAll] = useState(false)
-  const groupCompanies = conferenceData.companies.filter((company) => company.group === group)
-  const filtered = conferenceData.conferences.filter((conference) =>
-    groupCompanies.some((company) => company.code === conference.companyCode) &&
+  const groupCompanies = conferenceCompanies.filter((company: { group?: string }) => company.group === group)
+  const filtered = conferences.filter((conference) =>
+    groupCompanies.some((company: { code: string }) => company.code === conference.companyCode) &&
     (companyCode === '全部' || conference.companyCode === companyCode),
   )
   const visible = showAll ? filtered : filtered.slice(0, 8)
@@ -821,23 +789,23 @@ function ConferenceCenter() {
       <a className="text-link" href={conferenceData.source.url} target="_blank" rel="noreferrer">官方資料來源 <ExternalLink size={14} /></a>
     </div>
     <div className="conference-summary">
-      <div><Presentation size={19} /><span>已匯入</span><strong>{conferenceData.conferences.length}</strong><small>場法說會</small></div>
-      <div><Building2 size={19} /><span>追蹤企業</span><strong>{conferenceData.companies.length}</strong><small>家公司</small></div>
+    <div><Presentation size={19} /><span>已匯入</span><strong>{conferences.length}</strong><small>場法說會</small></div>
+    <div><Building2 size={19} /><span>追蹤企業</span><strong>{conferenceCompanies.length}</strong><small>家公司</small></div>
       <div><CalendarDays size={19} /><span>最新場次</span><strong>{latestDate}</strong><small>依目前篩選</small></div>
       <div><RefreshCw size={19} /><span>資料更新</span><strong>{new Date(conferenceData.generatedAt).toLocaleDateString('zh-TW')}</strong><small>可重新執行匯入</small></div>
     </div>
     <div className="conference-toolbar panel">
       <div className="conference-groups">
-        {['PCB', '資訊服務業'].map((item) => <button key={item} className={group === item ? 'active' : ''} onClick={() => changeGroup(item)}>{item}<span>{conferenceData.companies.filter((company) => company.group === item).length}</span></button>)}
+        {['PCB', '資訊服務業'].map((item) => <button key={item} className={group === item ? 'active' : ''} onClick={() => changeGroup(item)}>{item}<span>{conferenceCompanies.filter((company: { group?: string }) => company.group === item).length}</span></button>)}
       </div>
-      <label>企業篩選<select value={companyCode} onChange={(event) => { setCompanyCode(event.target.value); setShowAll(false) }}><option value="全部">全部企業</option>{groupCompanies.map((item) => <option value={item.code} key={item.code}>{item.code} {item.name}（{item.conferenceCount}）</option>)}</select></label>
+      <label>企業篩選<select value={companyCode} onChange={(event) => { setCompanyCode(event.target.value); setShowAll(false) }}><option value="全部">全部企業</option>{groupCompanies.map((item: { code: string; name: string; conferenceCount: number }) => <option value={item.code} key={item.code}>{item.code} {item.name}（{item.conferenceCount}）</option>)}</select></label>
     </div>
     <div className="tracked-companies">
-      {groupCompanies.map((item) => <button key={item.code} title={item.note} className={companyCode === item.code ? 'active' : ''} onClick={() => { setCompanyCode(companyCode === item.code ? '全部' : item.code); setShowAll(false) }}><b>{item.code}</b>{item.name}<span>{item.conferenceCount}</span>{item.note && <i>!</i>}</button>)}
+      {groupCompanies.map((item: { code: string; name: string; conferenceCount: number; note?: string }) => <button key={item.code} title={item.note} className={companyCode === item.code ? 'active' : ''} onClick={() => { setCompanyCode(companyCode === item.code ? '全部' : item.code); setShowAll(false) }}><b>{item.code}</b>{item.name}<span>{item.conferenceCount}</span>{item.note && <i>!</i>}</button>)}
     </div>
     <div className="conference-list panel">
       <div className="conference-list-head"><span>共 {filtered.length} 場資料</span><small>最新日期優先</small></div>
-      {visible.map((item) => {
+      {visible.map((item: ConferenceItem) => {
         const [startDate, endDate] = item.date.split(' 至 ')
         return <article className="conference-item" key={`${item.companyCode}-${item.date}-${item.time}-${item.summary}`}>
         <div className="conference-date"><strong>{startDate.slice(5).replace('-', '.')}</strong><span>{endDate ? `至 ${endDate.slice(5).replace('-', '.')}` : `${startDate.slice(0, 4)} · ${item.time || '時間未定'}`}</span></div>

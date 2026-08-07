@@ -7,8 +7,9 @@
     "predev": "npm run generate-data",
     "prebuild": "npm run generate-data",
     "generate-data": "tsx scripts/build-data.ts",
-    "dev": "next dev",
-    "build": "next build"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

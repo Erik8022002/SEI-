@@ -16,6 +16,7 @@ import {
 import conferenceData from './generated/investor-conferences.json'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { TwseMarketSnapshot } from './components/twse-market-snapshot'
 
 type RawConference = Record<string, unknown>
 type ConferenceItem = {
@@ -784,6 +785,7 @@ function App() {
 
           <section id="financial" className="section-block reveal">
             <div className="section-title"><div><span>FINANCIAL PULSE</span><h2>財務脈動</h2><p>核心財務指標與近六季表現</p></div><label className="period-button"><CalendarDays size={15} /><select value={financialPeriod} onChange={(event) => setFinancialPeriod(event.target.value as FinancialPeriod)} aria-label="選擇財務資料期間">{financialPeriods.map((period) => <option value={period.value} key={period.value}>{period.label}</option>)}</select><ChevronDown size={14} /></label></div>
+            <TwseMarketSnapshot company={company} />
             <Suspense fallback={<div className="h-[620px] animate-pulse rounded-3xl border border-[#dcdad3] bg-[#f8f7f3]" role="status" aria-label="載入財務圖表" />}>
               <AdvancedStats company={company} metrics={displayedMetrics} periodLabel={selectedPeriod.label} />
             </Suspense>

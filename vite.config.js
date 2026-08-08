@@ -15,6 +15,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api-proxy/, ''),
       },
+      '/twse-openapi': {
+        target: 'https://openapi.twse.com.tw',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/twse-openapi/, ''),
+      },
     },
   },
 });

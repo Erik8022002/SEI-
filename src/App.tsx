@@ -17,6 +17,7 @@ import conferenceData from './generated/investor-conferences.json'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { TwseMarketSnapshot } from './components/twse-market-snapshot'
+import { fetchTwseCompanyByName } from './lib/twse-company'
 
 type RawConference = Record<string, unknown>
 type ConferenceItem = {
@@ -55,6 +56,7 @@ const AdvancedStats = lazy(() => import('@/components/ui/advanced-stats'))
 type FinancialPeriod = 'quarter' | 'halfYear' | 'year'
 type EventMode = 'realtime' | 'history'
 type EventSyncStatus = 'refreshing' | 'official' | 'fallback'
+type CompanySyncStatus = 'idle' | 'loading' | 'official' | 'fallback'
 type SearchHistoryItem = {
   id: string
   type: 'company' | 'conference'
@@ -231,7 +233,9 @@ function App() {
   const [mobileNav, setMobileNav] = useState(false)
   const [strategyMetricIds, setStrategyMetricIds] = useState(['revenue', 'grossMargin', 'debtRatio', 'currentRatio', 'eps'])
   const [financialPeriod, setFinancialPeriod] = useState<FinancialPeriod>('year')
+  const [companySyncStatus, setCompanySyncStatus] = useState<CompanySyncStatus>('idle')
   const searchRef = useRef<HTMLDivElement>(null)
+  const companyLookupControllerRef = useRef<AbortController | null>(null)
   const materialEvents = useMaterialEvents(company)
 
   const profileResults = companyList.filter((item) =>
@@ -252,7 +256,7 @@ function App() {
     : company.historicalEvents.filter((event) => event.category === eventFilter)
   const selectedPeriod = financialPeriods.find((period) => period.value === financialPeriod) ?? financialPeriods[2]
   const periodTrend = company.trend.slice(-selectedPeriod.quarters)
-  const displayedMetrics = company.metrics.map((metric, index) => index < 2 ? {
+  const displayedMetrics = company.metrics.map((metric, index) => index < 2 && periodTrend.length > 0 ? {
     ...metric,
     label: `${selectedPeriod.label}${index === 0 ? '營收' : '稅後淨利'}`,
     value: periodTrend.reduce((total, point) => total + (index === 0 ? point.revenue : point.profit), 0),
@@ -275,6 +279,8 @@ function App() {
     }
   }, [searchHistory])
 
+  useEffect(() => () => companyLookupControllerRef.current?.abort(), [])
+
   const rememberSearch = (item: SearchHistoryItem) => {
     setSearchHistory((current) => [item, ...current.filter((entry) => entry.id !== item.id)].slice(0, 6))
   }
@@ -290,6 +296,37 @@ function App() {
       searchedAt: new Date().toISOString(),
     })
     setCompany(next)
+    companyLookupControllerRef.current?.abort()
+    const controller = new AbortController()
+    companyLookupControllerRef.current = controller
+    setCompanySyncStatus(next.market === '上市' ? 'loading' : 'fallback')
+
+    if (next.market === '上市') {
+      void fetchTwseCompanyByName(next, controller.signal)
+        .then((profile) => {
+          if (controller.signal.aborted || !profile) {
+            if (!controller.signal.aborted) setCompanySyncStatus('fallback')
+            return
+          }
+          setCompany((current) => current.id === next.id ? {
+            ...current,
+            ...profile.company,
+            id: current.id,
+            events: current.events,
+            historicalEvents: current.historicalEvents,
+            trend: current.trend,
+            scores: current.scores,
+            opportunities: current.opportunities,
+            risks: current.risks,
+            questions: current.questions,
+          } : current)
+          setCompanySyncStatus('official')
+          setStrategyMetricIds(profile.company.strategyMetrics?.map((metric) => metric.id).slice(0, 5) ?? ['revenue'])
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setCompanySyncStatus('fallback')
+        })
+    }
     setQuery('')
     setSearchOpen(false)
     setChat([])
@@ -754,7 +791,16 @@ function App() {
               <p>{company.englishName}</p>
               <div className="company-tags"><span><Building2 size={13} /> {company.industry}</span><span>統編 {company.taxId}</span><span>{company.location}</span></div>
             </div>
-            <div className="updated"><RefreshCw size={13} /> 更新於 {company.updatedAt}</div>
+            <div className={`updated company-sync-status ${companySyncStatus}`}>
+              <RefreshCw size={13} />
+              {companySyncStatus === 'loading'
+                ? `正在以「${company.name}」同步 TWSE`
+                : companySyncStatus === 'official'
+                  ? `TWSE 官方資料 · ${company.updatedAt}`
+                  : companySyncStatus === 'fallback'
+                    ? `顯示既有資料 · ${company.updatedAt}`
+                    : `更新於 ${company.updatedAt}`}
+            </div>
           </section>
 
           <section className="overview-grid reveal">

@@ -153,6 +153,11 @@ button { cursor: pointer; }
 .text-link { border: 0; background: none; color: var(--green-light); display: inline-flex; align-items: center; gap: 5px; padding: 0; font-size: 11px; font-weight: 600; text-decoration: none; }
 .brief-card .text-link { margin-top: 18px; }
 .company-website-link:hover { color: var(--orange); }
+.company-sync-status { display: inline-flex; align-items: center; gap: 5px; }
+.company-sync-status.loading { color: #6f8f84; }
+.company-sync-status.loading svg { animation: spin .9s linear infinite; }
+.company-sync-status.official { color: #27815f; }
+.company-sync-status.fallback { color: #a37845; }
 
 .section-block { padding: 58px 0; border-top: 1px solid var(--line); scroll-margin-top: 50px; }
 .section-title { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; }

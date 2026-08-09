@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio'
 
 const MOPS_CONFERENCE_URL = 'https://mopsov.twse.com.tw/mops/web/ajax_t100sb02_1'
+const CONFERENCE_LOOKBACK_YEARS = 3
 
 function cleanText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim()
@@ -98,6 +99,26 @@ function normalizeMarket(value) {
   return 'sii'
 }
 
+function conferenceSortKey(item) {
+  const text = cleanText(item?.date)
+  const match = text.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/)
+  if (!match) return text
+  return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
+}
+
+function mergeConferenceRows(groups) {
+  const seen = new Set()
+  return groups
+    .flat()
+    .filter((item) => {
+      const key = [item.companyCode, item.date, item.time, item.summary, item.location].join('|')
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .sort((a, b) => conferenceSortKey(b).localeCompare(conferenceSortKey(a)) || b.time.localeCompare(a.time))
+}
+
 export default async function handler(request, response) {
   if (request.method && request.method !== 'GET') {
     response.setHeader('Allow', 'GET')
@@ -110,9 +131,12 @@ export default async function handler(request, response) {
 
   const ticker = cleanText(tickerValue)
   const market = cleanText(marketValue)
-  const currentRocYear = String(new Date().getFullYear() - 1911)
-  const requestedYear = cleanText(yearValue)
-  const year = /^\d{3}$/.test(requestedYear) ? requestedYear : currentRocYear
+  const currentRocYear = new Date().getFullYear() - 1911
+  const requestedYear = Number(cleanText(yearValue))
+  const endYear = Number.isInteger(requestedYear) && requestedYear >= 100 && requestedYear <= 999
+    ? requestedYear
+    : currentRocYear
+  const years = Array.from({ length: CONFERENCE_LOOKBACK_YEARS }, (_, index) => String(endYear - index))
   const month = 'all'
 
   if (!ticker || !/^[0-9]{4,6}$/.test(ticker)) {
@@ -124,17 +148,32 @@ export default async function handler(request, response) {
   }
 
   try {
-    const html = await queryConferenceHtml({ ticker, market: normalizeMarket(market), year })
-    const conferences = /查無資料/.test(html)
-      ? []
-      : parseConferenceRows(html, market)
+    const normalizedMarket = normalizeMarket(market)
+    const settled = await Promise.allSettled(
+      years.map(async (year) => {
+        const html = await queryConferenceHtml({ ticker, market: normalizedMarket, year })
+        return /查無資料/.test(html) ? [] : parseConferenceRows(html, market)
+      }),
+    )
+
+    const successfulGroups = settled
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value)
+
+    if (successfulGroups.length === 0) {
+      const rejected = settled.find((result) => result.status === 'rejected')
+      throw rejected?.reason instanceof Error ? rejected.reason : new Error('MOPS 法說會同步失敗')
+    }
+
+    const conferences = mergeConferenceRows(successfulGroups)
+    const startYear = endYear - (CONFERENCE_LOOKBACK_YEARS - 1)
 
     return response.status(200).json({
       ticker,
       market,
-      year,
+      years,
       month,
-      rangeLabel: `${Number(year) + 1911} 全年度`,
+      rangeLabel: `${startYear + 1911}–${endYear + 1911}`,
       fetchedAt: new Date().toISOString(),
       source: '公開資訊觀測站－法人說明會一覽表',
       conferences,

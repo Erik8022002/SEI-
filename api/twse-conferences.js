@@ -64,7 +64,7 @@ function parseConferenceRows(html, market) {
   }).get()
 }
 
-async function queryConferenceHtml({ ticker, market, year, month }) {
+async function queryConferenceHtml({ ticker, market, year }) {
   const body = new URLSearchParams({
     subMenuID: '2',
     step: '1',
@@ -72,7 +72,7 @@ async function queryConferenceHtml({ ticker, market, year, month }) {
     off: '1',
     TYPEK: market,
     year,
-    month,
+    month: 'all',
     co_id: ticker,
   })
 
@@ -107,23 +107,24 @@ export default async function handler(request, response) {
   const tickerValue = Array.isArray(request.query?.ticker) ? request.query.ticker[0] : request.query?.ticker
   const marketValue = Array.isArray(request.query?.market) ? request.query.market[0] : request.query?.market
   const yearValue = Array.isArray(request.query?.year) ? request.query.year[0] : request.query?.year
-  const monthValue = Array.isArray(request.query?.month) ? request.query.month[0] : request.query?.month
 
   const ticker = cleanText(tickerValue)
   const market = cleanText(marketValue)
-  const year = cleanText(yearValue)
-  const month = cleanText(monthValue).padStart(2, '0')
+  const currentRocYear = String(new Date().getFullYear() - 1911)
+  const requestedYear = cleanText(yearValue)
+  const year = /^\d{3}$/.test(requestedYear) ? requestedYear : currentRocYear
+  const month = 'all'
 
   if (!ticker || !/^[0-9]{4,6}$/.test(ticker)) {
     return response.status(400).json({ error: 'ticker 參數不正確' })
   }
 
-  if (!year || !month || !/^\d{3}$/.test(year) || !/^\d{2}$/.test(month) || !['上市', '上櫃', '興櫃', '公開發行'].includes(market)) {
-    return response.status(400).json({ error: 'market、year 或 month 參數不正確' })
+  if (!['上市', '上櫃', '興櫃', '公開發行'].includes(market)) {
+    return response.status(400).json({ error: 'market 參數不正確' })
   }
 
   try {
-    const html = await queryConferenceHtml({ ticker, market: normalizeMarket(market), year, month })
+    const html = await queryConferenceHtml({ ticker, market: normalizeMarket(market), year })
     const conferences = /查無資料/.test(html)
       ? []
       : parseConferenceRows(html, market)
@@ -133,6 +134,7 @@ export default async function handler(request, response) {
       market,
       year,
       month,
+      rangeLabel: `${Number(year) + 1911} 全年度`,
       fetchedAt: new Date().toISOString(),
       source: '公開資訊觀測站－法人說明會一覽表',
       conferences,

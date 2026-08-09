@@ -8,9 +8,11 @@ export type FinancialMetric = {
   note: string
 }
 
+export type EventCategory = '技術投資' | '營運發展' | '公司治理' | '市場合作'
+
 export type Event = {
   date: string
-  category: '財務' | '營運' | '治理' | '市場'
+  category: EventCategory
   title: string
   summary: string
   impact: '正向' | '中性' | '留意'
@@ -18,7 +20,7 @@ export type Event = {
 
 export type HistoricalEvent = {
   date: string
-  category: '技術投資' | '營運發展' | '公司治理' | '市場合作'
+  category: EventCategory
   title: string
   summary: string
 }
@@ -106,7 +108,6 @@ export function normalizeCompany(raw: Partial<Company> | Record<string, unknown>
   const capital = String(raw.capital || raw['實收資本額'] || '')
   const score = typeof raw.score === 'number' ? raw.score : 0
   const scoreLabel = String(raw.scoreLabel || (raw.score ? `綜合得分 ${raw.score}` : DEFAULT_COMPANY.scoreLabel))
-  const updatedAt = String(raw.updatedAt || DEFAULT_COMPANY.updatedAt)
   const summary = String(raw.summary || DEFAULT_COMPANY.summary)
 
   return {
@@ -131,8 +132,8 @@ export function normalizeCompany(raw: Partial<Company> | Record<string, unknown>
     strategyMetrics: Array.isArray(raw.strategyMetrics) ? raw.strategyMetrics : [],
     scores: Array.isArray(raw.scores) ? raw.scores : [],
     trend: Array.isArray(raw.trend) ? raw.trend : [],
-    events: Array.isArray(raw.events) ? raw.events : [],
-    historicalEvents: Array.isArray(raw.historicalEvents) ? raw.historicalEvents : [],
+    events: Array.isArray(raw.events) ? raw.events as Event[] : [],
+    historicalEvents: Array.isArray(raw.historicalEvents) ? raw.historicalEvents as HistoricalEvent[] : [],
     opportunities: Array.isArray(raw.opportunities) ? raw.opportunities : [],
     risks: Array.isArray(raw.risks) ? raw.risks : [],
     questions: Array.isArray(raw.questions) ? raw.questions : [],

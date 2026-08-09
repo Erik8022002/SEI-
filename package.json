@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "npm run generate-data",
     "prebuild": "npm run generate-data",
-    "generate-data": "tsx scripts/build-data.ts",
+    "generate-data": "tsx scripts/build-data.ts && node scripts/import-investor-conferences.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"

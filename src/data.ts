@@ -132,7 +132,7 @@ export function normalizeCompany(raw: Partial<Company> | Record<string, unknown>
     strategyMetrics: Array.isArray(raw.strategyMetrics) ? raw.strategyMetrics : [],
     scores: Array.isArray(raw.scores) ? raw.scores : [],
     trend: Array.isArray(raw.trend) ? raw.trend : [],
-    events: Array.isArray(raw.events) ? raw.events as Event[] : [],
+    events: [],
     historicalEvents: Array.isArray(raw.historicalEvents) ? raw.historicalEvents as HistoricalEvent[] : [],
     opportunities: Array.isArray(raw.opportunities) ? raw.opportunities : [],
     risks: Array.isArray(raw.risks) ? raw.risks : [],

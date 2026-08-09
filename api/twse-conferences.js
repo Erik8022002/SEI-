@@ -1,157 +1,103 @@
 import * as cheerio from 'cheerio'
 
-const MOPS_CONFERENCE_URLS = [
-  'https://mopsov.twse.com.tw/mops/web/ajax_t100sb02_1',
-  'https://mops.twse.com.tw/mops/web/ajax_t100sb02_1',
-]
-const MOPS_CONFERENCE_REFERERS = [
-  'https://mopsov.twse.com.tw/mops/web/t100sb02_1',
-  'https://mops.twse.com.tw/mops/web/t100sb02_1',
-]
+const MOPS_CONFERENCE_URL = 'https://mopsov.twse.com.tw/mops/web/ajax_t100sb02_1'
+const MOPS_PDF_ROOT = 'https://mopsov.twse.com.tw/nas/STR/'
 const CONFERENCE_LOOKBACK_YEARS = 3
-const MONTHS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'))
-const QUERY_CONCURRENCY = 6
 
 function cleanText(value) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim()
+  return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function normalizeMarket(value) {
+  const market = cleanText(value)
+  if (market === '上櫃') return 'otc'
+  if (market === '興櫃') return 'rotc'
+  if (market === '公開發行') return 'pub'
+  return 'sii'
 }
 
 function formatMarket(value) {
-  if (value === '上櫃') return '上櫃'
-  if (value === '興櫃') return '興櫃'
-  if (value === '公開發行') return '公開發行'
+  if (value === 'otc') return '上櫃'
+  if (value === 'rotc') return '興櫃'
+  if (value === 'pub') return '公開發行'
   return '上市'
 }
 
-function normalizeHref(value) {
-  const href = cleanText(value)
-  if (!href || href === '#' || href.startsWith('javascript:')) return ''
-  try {
-    return new URL(href, 'https://mopsov.twse.com.tw').toString()
-  } catch {
-    return href
-  }
+function toGregorian(rocDate) {
+  const text = cleanText(rocDate)
+  if (text.includes(' 至 ')) return text.split(' 至 ').map(toGregorian).join(' 至 ')
+  const rocMatch = text.match(/^(\d{3})\/(\d{2})\/(\d{2})$/)
+  if (rocMatch) return `${Number(rocMatch[1]) + 1911}-${rocMatch[2]}-${rocMatch[3]}`
+  const gregorianMatch = text.match(/^(\d{4})\/(\d{2})\/(\d{2})$/)
+  if (gregorianMatch) return `${gregorianMatch[1]}-${gregorianMatch[2]}-${gregorianMatch[3]}`
+  return text
 }
 
-function extractPdfUrl(cell) {
-  const href = cell.find('a').attr('href')
-  const normalizedHref = normalizeHref(href)
-  if (normalizedHref) return normalizedHref
-
-  const onclick = cell.find('a').attr('onclick') || cell.attr('onclick') || ''
-  const match = onclick.match(/fileName\.value\s*=\s*["']([^"']+)["']/)
-  if (!match) return ''
-  return `https://mopsov.twse.com.tw/home/t05st02/${match[1]}`
-}
-
-function extractFirstHref(cell) {
-  return normalizeHref(cell.find('a').attr('href'))
-}
-
-function normalizeConferenceDate(value) {
-  return cleanText(value).replace(/\b(\d{2,3})[\/-](\d{1,2})[\/-](\d{1,2})\b/g, (_, rocYear, month, day) => {
-    const year = Number(rocYear) + 1911
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-  }).replace(/\b(\d{4})\/(\d{1,2})\/(\d{1,2})\b/g, (_, year, month, day) => (
-    `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-  ))
-}
-
-function parseConferenceRows(html, market, ticker) {
+function parseRows(html, market, ticker) {
   const $ = cheerio.load(html)
-  const conferences = []
 
-  $('table tr').each((_, row) => {
+  return $('#myTable tr[data-type="body"]').map((_, row) => {
     const cells = $(row).find('td')
-    if (cells.length < 6) return
+    const companyCode = cleanText($(cells[0]).text())
+    if (companyCode !== ticker) return null
 
-    const texts = cells.map((__, cell) => cleanText($(cell).text())).get()
-    const codeIndex = texts.findIndex((text) => text === ticker)
-    if (codeIndex < 0) return
+    const presentationFile = (index) => $(cells[index]).find('a').attr('onclick')?.match(/fileName\.value=["']([^"']+)["']/)?.[1] ?? null
+    const links = (index) => $(cells[index]).find('a[href]').map((__, anchor) => $(anchor).attr('href')).get().filter((href) => href && href !== '#')
+    const website = links(8)[0] ?? ''
+    const videos = links(9)
+      .filter((href) => /^https?:/i.test(href))
+      .map((href) => href.replace(/^http:/i, 'https:'))
+    const chineseFile = presentationFile(6)
+    const englishFile = presentationFile(7)
 
-    const code = texts[codeIndex]
-    const name = texts[codeIndex + 1] ?? ''
-    const date = normalizeConferenceDate(texts[codeIndex + 2] ?? '')
-    const time = texts[codeIndex + 3] ?? ''
-    const location = texts[codeIndex + 4] ?? ''
-    const summary = texts[codeIndex + 5] ?? ''
-
-    if (!code || !date || !summary) return
-
-    const presentationZh = cells.length > codeIndex + 6 ? extractPdfUrl(cells.eq(codeIndex + 6)) : ''
-    const presentationEn = cells.length > codeIndex + 7 ? extractPdfUrl(cells.eq(codeIndex + 7)) : ''
-    const website = cells.length > codeIndex + 8 ? extractFirstHref(cells.eq(codeIndex + 8)) : ''
-    const video = cells.length > codeIndex + 9 ? extractFirstHref(cells.eq(codeIndex + 9)) : ''
-    const notes = cells.length > codeIndex + 10 ? cleanText(cells.eq(codeIndex + 10).text()) : ''
-
-    conferences.push({
-      date,
-      time,
-      companyCode: code,
-      companyName: name,
+    return {
+      companyCode,
+      companyName: cleanText($(cells[1]).text()),
       market: formatMarket(market),
-      summary,
-      location,
-      presentationZh,
-      videos: video ? [video] : [],
+      date: toGregorian(cleanText($(cells[2]).text())),
+      time: cleanText($(cells[3]).text()),
+      location: cleanText($(cells[4]).text()),
+      summary: cleanText($(cells[5]).text()),
+      presentationZh: chineseFile ? MOPS_PDF_ROOT + chineseFile : '',
+      presentationEn: englishFile ? MOPS_PDF_ROOT + englishFile : '',
       website,
-      presentationEn,
-      notes,
-    })
-  })
-
-  return conferences
+      videos,
+      notes: cleanText($(cells[10]).text()).replace(/^無$/, ''),
+    }
+  }).get().filter(Boolean)
 }
 
-async function queryConferenceHtml({ ticker, year, month }) {
+async function fetchYear(market, year, ticker) {
   const body = new URLSearchParams({
-    encodeURIComponent: '1',
     step: '1',
     firstin: '1',
     off: '1',
-    queryName: 'co_id',
-    inpuType: 'co_id',
-    TYPEK: 'all',
-    isnew: 'false',
-    year,
-    month,
-    co_id: ticker,
+    TYPEK: market,
+    year: String(year),
+    month: '',
+    co_id: '',
   })
 
-  let lastError = null
+  const response = await fetch(MOPS_CONFERENCE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      Referer: 'https://mopsov.twse.com.tw/mops/web/t100sb02_1',
+      'User-Agent': 'CompassFinancialIntelligence/0.1 (public-data importer)',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+    body,
+  })
 
-  for (let index = 0; index < MOPS_CONFERENCE_URLS.length; index += 1) {
-    try {
-      const response = await fetch(MOPS_CONFERENCE_URLS[index], {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          Referer: MOPS_CONFERENCE_REFERERS[index],
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-        },
-        body,
-      })
-
-      if (!response.ok) throw new Error(`MOPS 法說會查詢回應 ${response.status}`)
-      const html = await response.text()
-      if (!html) throw new Error('MOPS 法說會查詢回傳空內容')
-      return html
-    } catch (error) {
-      lastError = error
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error('MOPS 法說會查詢失敗')
+  if (!response.ok) throw new Error(`MOPS ${market} ${year} failed: ${response.status}`)
+  const html = await response.text()
+  return parseRows(html, market, ticker)
 }
 
 function conferenceSortKey(item) {
-  const text = cleanText(item?.date)
-  const match = text.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/)
-  if (!match) return text
-  return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
+  return `${cleanText(item.date).split(' 至 ')[0]} ${cleanText(item.time)}`
 }
 
 function mergeConferenceRows(groups) {
@@ -164,28 +110,7 @@ function mergeConferenceRows(groups) {
       seen.add(key)
       return true
     })
-    .sort((a, b) => conferenceSortKey(b).localeCompare(conferenceSortKey(a)) || cleanText(b.time).localeCompare(cleanText(a.time)))
-}
-
-async function queryPeriods(periods, worker) {
-  const fulfilled = []
-  const rejected = []
-
-  for (let index = 0; index < periods.length; index += QUERY_CONCURRENCY) {
-    const batch = periods.slice(index, index + QUERY_CONCURRENCY)
-    const settled = await Promise.allSettled(batch.map(worker))
-
-    settled.forEach((result, batchIndex) => {
-      const period = batch[batchIndex]
-      if (result.status === 'fulfilled') {
-        fulfilled.push({ period, value: result.value })
-      } else {
-        rejected.push({ period, reason: result.reason })
-      }
-    })
-  }
-
-  return { fulfilled, rejected }
+    .sort((a, b) => conferenceSortKey(b).localeCompare(conferenceSortKey(a)))
 }
 
 export default async function handler(request, response) {
@@ -199,50 +124,47 @@ export default async function handler(request, response) {
   const yearValue = Array.isArray(request.query?.year) ? request.query.year[0] : request.query?.year
 
   const ticker = cleanText(tickerValue)
-  const market = cleanText(marketValue)
+  const marketLabel = cleanText(marketValue)
   const currentRocYear = new Date().getFullYear() - 1911
   const requestedYear = Number(cleanText(yearValue))
   const endYear = Number.isInteger(requestedYear) && requestedYear >= 100 && requestedYear <= 999
     ? requestedYear
     : currentRocYear
-  const years = Array.from({ length: CONFERENCE_LOOKBACK_YEARS }, (_, index) => String(endYear - index))
-  const periods = years.flatMap((year) => MONTHS.map((month) => ({ year, month })))
+  const years = Array.from({ length: CONFERENCE_LOOKBACK_YEARS }, (_, index) => endYear - index)
 
   if (!ticker || !/^[0-9]{4,6}$/.test(ticker)) {
     return response.status(400).json({ error: 'ticker 參數不正確' })
   }
 
-  if (!['上市', '上櫃', '興櫃', '公開發行'].includes(market)) {
+  if (!['上市', '上櫃', '興櫃', '公開發行'].includes(marketLabel)) {
     return response.status(400).json({ error: 'market 參數不正確' })
   }
 
   try {
-    const { fulfilled, rejected } = await queryPeriods(periods, async ({ year, month }) => {
-      const html = await queryConferenceHtml({ ticker, year, month })
-      if (/查無資料/.test(html)) return []
-      return parseConferenceRows(html, market, ticker)
-    })
+    const market = normalizeMarket(marketLabel)
+    const settled = await Promise.allSettled(years.map((year) => fetchYear(market, year, ticker)))
+    const successfulGroups = settled
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value)
 
-    if (fulfilled.length === 0) {
-      const firstFailure = rejected[0]?.reason
-      throw firstFailure instanceof Error ? firstFailure : new Error('MOPS 法說會同步失敗')
+    if (successfulGroups.length === 0) {
+      const firstFailure = settled.find((result) => result.status === 'rejected')
+      throw firstFailure?.reason instanceof Error ? firstFailure.reason : new Error('MOPS 法說會同步失敗')
     }
 
-    const conferences = mergeConferenceRows(fulfilled.map((result) => result.value))
+    const conferences = mergeConferenceRows(successfulGroups)
     const startYear = endYear - (CONFERENCE_LOOKBACK_YEARS - 1)
 
     response.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300')
     return response.status(200).json({
       ticker,
-      market,
-      years,
-      months: MONTHS,
+      market: marketLabel,
+      years: years.map(String),
       rangeLabel: `${startYear + 1911}–${endYear + 1911}`,
       fetchedAt: new Date().toISOString(),
       source: '公開資訊觀測站－法人說明會一覽表',
-      queryCount: periods.length,
-      successfulQueries: fulfilled.length,
-      failedQueries: rejected.length,
+      successfulYears: settled.filter((result) => result.status === 'fulfilled').length,
+      failedYears: settled.filter((result) => result.status === 'rejected').length,
       conferences,
     })
   } catch (error) {

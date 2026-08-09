@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   ArrowRight, Bot, Building2, CalendarDays,
   Check, ChevronDown, CircleAlert, Clock3, Copy, Download, ExternalLink,
@@ -18,6 +18,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { TwseMarketSnapshot } from './components/twse-market-snapshot'
 import { fetchTwseCompanyByName } from './lib/twse-company'
+import { fetchTwseHistoricalEvents, mergeTwseHistoricalEvents } from './lib/twse-historical-events'
 
 type RawConference = Record<string, unknown>
 type ConferenceItem = {
@@ -31,6 +32,12 @@ type ConferenceItem = {
   presentationZh?: string
   videos: string[]
   website?: string
+}
+
+type ConferenceQueryState = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  message: string
+  items: ConferenceItem[]
 }
 
 const rawConferences = (conferenceData as { conferences?: RawConference[] }).conferences ?? []
@@ -77,6 +84,16 @@ const financialPeriods: { value: FinancialPeriod; label: string; quarters: numbe
   { value: 'year', label: '近一年', quarters: 4 },
 ]
 
+function buildMopsHistoricalNewsUrl(companyCode: string) {
+  const query = new URLSearchParams({
+    companyId: companyCode,
+    year: String(new Date().getFullYear() - 1911),
+    month: 'all',
+  })
+
+  return `https://mops.twse.com.tw/mops/#/web/t05st01?${query.toString()}`
+}
+
 function readSearchHistory() {
   if (typeof window === 'undefined') return []
   try {
@@ -97,6 +114,10 @@ function mergeMaterialEvents(official: MaterialEvent[], fallback: MaterialEvent[
       return true
     })
     .sort((a, b) => b.date.localeCompare(a.date))
+}
+
+function mergeHistoricalEvents(official: HistoricalEvent[], fallback: HistoricalEvent[]) {
+  return mergeTwseHistoricalEvents(official, fallback)
 }
 
 function useMaterialEvents(company: Company) {
@@ -237,6 +258,26 @@ function App() {
   const searchRef = useRef<HTMLDivElement>(null)
   const companyLookupControllerRef = useRef<AbortController | null>(null)
   const materialEvents = useMaterialEvents(company)
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    const syncHistoricalEvents = async () => {
+      try {
+        const payload = await fetchTwseHistoricalEvents(company, controller.signal)
+        if (controller.signal.aborted || !payload?.events) return
+        setCompany((current) => current.id === company.id ? {
+          ...current,
+          historicalEvents: mergeHistoricalEvents(payload.events, current.historicalEvents),
+        } : current)
+      } catch {
+        if (controller.signal.aborted) return
+      }
+    }
+
+    void syncHistoricalEvents()
+    return () => controller.abort()
+  }, [company.id, company.ticker, company.market])
 
   const profileResults = companyList.filter((item) =>
     [item.name, item.englishName, item.ticker, item.taxId].some((value) => value.toLowerCase().includes(query.toLowerCase())),
@@ -838,7 +879,7 @@ function App() {
           </section>
 
           <section id="events" className="section-block reveal">
-            <div className="section-title"><div><span>MATERIAL INTELLIGENCE</span><h2>重大訊息雷達</h2><p>每 4 小時同步官方重大訊息，並保留企業歷史事件脈絡</p></div><a className="text-link" href="https://mops.twse.com.tw/mops/#/web/t05st01" target="_blank" rel="noreferrer">前往公開資訊觀測站 <ExternalLink size={14} /></a></div>
+            <div className="section-title"><div><span>MATERIAL INTELLIGENCE</span><h2>重大訊息雷達</h2><p>每 4 小時同步官方重大訊息，並保留企業歷史事件脈絡</p></div><a className="text-link" href={buildMopsHistoricalNewsUrl(company.ticker)} target="_blank" rel="noreferrer">前往公開資訊觀測站 <ExternalLink size={14} /></a></div>
             <div className="event-layout">
               <div className="events panel">
                 <div className="event-mode-tabs" role="tablist" aria-label="重大事件資料類型">
@@ -972,13 +1013,118 @@ function ConferenceCenter() {
   const [group, setGroup] = useState('PCB')
   const [companyCode, setCompanyCode] = useState('全部')
   const [showAll, setShowAll] = useState(false)
+  const [conferenceQuery, setConferenceQuery] = useState<ConferenceQueryState>({
+    status: 'idle',
+    message: '顯示既有匯入資料',
+    items: conferences,
+  })
   const groupCompanies = conferenceCompanies.filter((company: { group?: string }) => company.group === group)
-  const filtered = conferences.filter((conference) =>
-    groupCompanies.some((company: { code: string }) => company.code === conference.companyCode) &&
-    (companyCode === '全部' || conference.companyCode === companyCode),
-  )
+  const activeCompany = initialCompanies.find((company) => company.ticker === companyCode)
+  const importYear = new Date().getFullYear() - 1911
+  const importMonth = String(new Date().getMonth() + 1).padStart(2, '0')
+  const selectedMarket = activeCompany?.market ?? '上市'
+  const sourceYear = String(importYear)
+  const sourceMonth = importMonth
+  const queryCode = companyCode === '全部' ? '' : companyCode
+  const filtered = conferenceQuery.items.filter((conference) => {
+    if (companyCode !== '全部') return conference.companyCode === companyCode
+    return groupCompanies.some((company: { code: string }) => company.code === conference.companyCode)
+  })
   const visible = showAll ? filtered : filtered.slice(0, 8)
   const latestDate = filtered[0]?.date ?? '尚無資料'
+  const selectedTypeK = selectedMarket === '上櫃'
+    ? 'otc'
+    : selectedMarket === '興櫃'
+      ? 'rotc'
+      : selectedMarket === '公開發行'
+        ? 'pub'
+        : 'sii'
+  const officialSourceHref = companyCode === '全部'
+    ? conferenceData.source.url
+    : 'https://mopsov.twse.com.tw/mops/web/ajax_t100sb02_1'
+
+  const openOfficialSource = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (companyCode === '全部') return
+    event.preventDefault()
+
+    const now = new Date()
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = officialSourceHref
+    form.target = '_blank'
+
+    const fields = {
+      subMenuID: '2',
+      step: '1',
+      firstin: '1',
+      off: '1',
+      TYPEK: selectedTypeK,
+      year: String(now.getFullYear() - 1911),
+      month: String(now.getMonth() + 1).padStart(2, '0'),
+      co_id: companyCode,
+    }
+
+    for (const [name, value] of Object.entries(fields)) {
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = name
+      input.value = value
+      form.appendChild(input)
+    }
+
+    document.body.appendChild(form)
+    form.submit()
+    form.remove()
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    const importConferenceData = async () => {
+      if (!queryCode) {
+        setConferenceQuery({ status: 'idle', message: '顯示既有匯入資料', items: conferences })
+        return
+      }
+
+      setConferenceQuery((current) => ({ ...current, status: 'loading', message: `正在匯入 ${queryCode} 的法說會資料` }))
+
+      try {
+        const params = new URLSearchParams({
+          ticker: queryCode,
+          market: selectedMarket,
+          year: sourceYear,
+          month: sourceMonth,
+        })
+        const response = await fetch(`/api/twse-conferences?${params}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error(`法說會資料同步失敗：${response.status}`)
+        }
+
+        const payload = await response.json() as { conferences?: ConferenceItem[]; message?: string }
+        const items = Array.isArray(payload.conferences) ? payload.conferences : []
+        setConferenceQuery({
+          status: 'ready',
+          message: items.length > 0
+            ? `已匯入 ${items.length} 筆 ${queryCode} 的法說會資料`
+            : `${queryCode} 在目前條件下查無法說會資料`,
+          items,
+        })
+      } catch (error) {
+        if (controller.signal.aborted) return
+        setConferenceQuery({
+          status: 'error',
+          message: error instanceof Error ? error.message : '法說會資料匯入失敗',
+          items: conferences,
+        })
+      }
+    }
+
+    void importConferenceData()
+    return () => controller.abort()
+  }, [queryCode, selectedMarket, sourceYear, sourceMonth])
 
   useEffect(() => {
     const selectCompany = (event: Event) => {
@@ -1000,7 +1146,7 @@ function ConferenceCenter() {
   return <section id="conferences" className="section-block conference-section reveal">
     <div className="section-title">
       <div><span>INVESTOR CONFERENCE</span><h2>法說會情報庫</h2><p>公開資訊觀測站 2024 至 2026 年逐場資料與原始簡報</p></div>
-      <a className="text-link" href={conferenceData.source.url} target="_blank" rel="noreferrer">官方資料來源 <ExternalLink size={14} /></a>
+      <a className="text-link" href={officialSourceHref} target="_blank" rel="noreferrer" onClick={openOfficialSource}>官方資料來源 <ExternalLink size={14} /></a>
     </div>
     <div className="conference-summary">
     <div><Presentation size={19} /><span>已匯入</span><strong>{conferences.length}</strong><small>場法說會</small></div>
@@ -1018,7 +1164,7 @@ function ConferenceCenter() {
       {groupCompanies.map((item: { code: string; name: string; conferenceCount: number; note?: string }) => <button key={item.code} title={item.note} className={companyCode === item.code ? 'active' : ''} onClick={() => { setCompanyCode(companyCode === item.code ? '全部' : item.code); setShowAll(false) }}><b>{item.code}</b>{item.name}<span>{item.conferenceCount}</span>{item.note && <i>!</i>}</button>)}
     </div>
     <div className="conference-list panel">
-      <div className="conference-list-head"><span>共 {filtered.length} 場資料</span><small>最新日期優先</small></div>
+      <div className="conference-list-head"><span>共 {filtered.length} 場資料</span><small>{conferenceQuery.status === 'loading' ? '匯入中' : '最新日期優先'}</small></div>
       {visible.map((item: ConferenceItem) => {
         const [startDate, endDate] = item.date.split(' 至 ')
         return <article className="conference-item" key={`${item.companyCode}-${item.date}-${item.time}-${item.summary}`}>
@@ -1034,7 +1180,7 @@ function ConferenceCenter() {
       {visible.length === 0 && <div className="conference-empty">此企業在匯入期間沒有法說會資料。</div>}
     </div>
     {filtered.length > 8 && <button className="load-more" onClick={() => setShowAll((value) => !value)}>{showAll ? '收合資料' : `顯示全部 ${filtered.length} 場`} <ChevronDown size={15} className={showAll ? 'rotate' : ''} /></button>}
-    <p className="source-note">資料來源：{conferenceData.source.name}。公司分類依提供清單保留，驚嘆號代表與官方產業分類不同或名稱經校正。</p>
+    <p className="source-note">資料來源：{conferenceData.source.name}。{conferenceQuery.message}。公司分類依提供清單保留，驚嘆號代表與官方產業分類不同或名稱經校正。</p>
   </section>
 }
 

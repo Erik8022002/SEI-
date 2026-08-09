@@ -1,5 +1,6 @@
 (() => {
   const LINK_SELECTOR = '#conferences .section-title a.text-link'
+  const OFFICIAL_CONFERENCE_SEARCH_URL = 'https://mopsov.twse.com.tw/mops/web/ajax_t100sb02_1'
 
   function getSelectedCompanyCode(section) {
     const companySelect = section.querySelector('.conference-toolbar select')
@@ -11,20 +12,36 @@
     return titleValues.find((value) => /^\d{4,6}$/.test(value)) ?? ''
   }
 
-  function buildOfficialConferenceUrl(companyCode) {
+  function openOfficialConferenceSearch(companyCode) {
     const now = new Date()
-    const params = new URLSearchParams({
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = OFFICIAL_CONFERENCE_SEARCH_URL
+    form.target = '_blank'
+
+    const fields = {
       encodeURIComponent: '1',
+      subMenuID: '2',
       step: '1',
       firstin: '1',
       off: '1',
       TYPEK: 'all',
       co_id: companyCode,
       year: String(now.getFullYear() - 1911),
-      month: String(now.getMonth() + 1).padStart(2, '0'),
-    })
+      month: 'all',
+    }
 
-    return `https://mopsov.twse.com.tw/mops/web/ajax_t100sb02_1?${params.toString()}#`
+    for (const [name, value] of Object.entries(fields)) {
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = name
+      input.value = value
+      form.appendChild(input)
+    }
+
+    document.body.appendChild(form)
+    form.submit()
+    form.remove()
   }
 
   document.addEventListener('click', (event) => {
@@ -39,6 +56,6 @@
 
     event.preventDefault()
     event.stopImmediatePropagation()
-    window.open(buildOfficialConferenceUrl(companyCode), '_blank', 'noopener,noreferrer')
+    openOfficialConferenceSearch(companyCode)
   }, true)
 })()

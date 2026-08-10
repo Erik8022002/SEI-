@@ -20,6 +20,7 @@ import { TwseMarketSnapshot } from './components/twse-market-snapshot'
 import { fetchTwseCompanyByName } from './lib/twse-company'
 import { fetchTwseHistoricalEvents, mergeTwseHistoricalEvents } from './lib/twse-historical-events'
 import { generateVisitStrategyCard, visitStrategyToText, type VisitStrategyCard } from './lib/visit-strategy'
+import { generateFinancialAssessment, type FinancialAssessmentCard } from './lib/financial-assessment'
 
 type RawConference = Record<string, unknown>
 type ConferenceItem = {
@@ -253,6 +254,9 @@ function App() {
   const [strategyCard, setStrategyCard] = useState<VisitStrategyCard | null>(null)
   const [strategyError, setStrategyError] = useState('')
   const [strategyChatId, setStrategyChatId] = useState<string | null>(null)
+  const [assessmentStatus, setAssessmentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [financialAssessment, setFinancialAssessment] = useState<FinancialAssessmentCard | null>(null)
+  const [assessmentError, setAssessmentError] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [exported, setExported] = useState(false)
@@ -262,7 +266,63 @@ function App() {
   const [companySyncStatus, setCompanySyncStatus] = useState<CompanySyncStatus>('idle')
   const searchRef = useRef<HTMLDivElement>(null)
   const companyLookupControllerRef = useRef<AbortController | null>(null)
+  const assessmentRequestRef = useRef(0)
   const materialEvents = useMaterialEvents(company)
+
+  const refreshFinancialAssessment = async () => {
+    const requestId = ++assessmentRequestRef.current
+    const targetCompany = company
+    setAssessmentStatus('loading')
+    setAssessmentError('')
+    setFinancialAssessment(null)
+    setCompany((current) => current.id === targetCompany.id ? {
+      ...current,
+      score: 0,
+      scoreLabel: '評估中',
+      scores: [],
+    } : current)
+
+    try {
+      const result = await generateFinancialAssessment({
+        apiBaseUrl: API_BASE_URL,
+        projectId: PROJECT_ID,
+        projectToken: PROJECT_TOKEN,
+        company: targetCompany,
+      })
+      if (assessmentRequestRef.current != requestId) return
+
+      setFinancialAssessment(result)
+      setAssessmentStatus('ready')
+      setCompany((current) => current.id === targetCompany.id ? {
+        ...current,
+        score: result.score ?? 0,
+        scoreLabel: result.label,
+        scores: result.dimensions
+          .filter((item) => item.score !== null)
+          .map((item) => ({ label: item.label, value: item.score as number })),
+      } : current)
+    } catch (error) {
+      if (assessmentRequestRef.current != requestId) return
+      console.error('財務綜合評估失敗:', error)
+      setAssessmentError(error instanceof Error ? error.message : '財務評估暫時無法完成')
+      setAssessmentStatus('error')
+      setCompany((current) => current.id === targetCompany.id ? {
+        ...current,
+        score: 0,
+        scoreLabel: '評估暫不可用',
+        scores: [],
+      } : current)
+    }
+  }
+
+  useEffect(() => {
+    void refreshFinancialAssessment()
+    return () => {
+      assessmentRequestRef.current += 1
+    }
+    // Company identity is the assessment boundary; later profile syncs should not trigger duplicate EAP calls.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company.id, company.ticker])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -381,6 +441,9 @@ function App() {
     setStrategyCard(null)
     setStrategyError('')
     setStrategyChatId(null)
+    setAssessmentStatus('idle')
+    setFinancialAssessment(null)
+    setAssessmentError('')
     setEventMode('realtime')
     setEventFilter('全部')
     setStrategyMetricIds([])
@@ -894,16 +957,33 @@ function App() {
 
           <section className="overview-grid reveal">
             <article className="score-card panel">
-              <div className="panel-kicker">FINANCIAL HEALTH</div>
+              <div className="panel-kicker">FINANCIAL HEALTH · EVIDENCE BASED</div>
               <div className="score-main">
-                <div className="score-ring" style={{ '--score': company.score } as React.CSSProperties}>
-                  <div><strong>{company.score}</strong><small>/ 100</small></div>
+                <div className="score-ring" style={{ '--score': financialAssessment?.score ?? 0 } as React.CSSProperties}>
+                  <div>
+                    <strong>{assessmentStatus === 'loading' ? '…' : financialAssessment?.score ?? '--'}</strong>
+                    {financialAssessment?.score !== null && financialAssessment?.score !== undefined && <small>/ 100</small>}
+                  </div>
                 </div>
-                <div className="score-copy"><span><ShieldCheck size={16} /> 綜合評估</span><h3>{company.scoreLabel}</h3><p>優於同產業 <b>{Math.min(company.score - 11, 96)}%</b> 的企業</p></div>
+                <div className="score-copy">
+                  <span><ShieldCheck size={16} /> 綜合評估</span>
+                  <h3>{assessmentStatus === 'loading' ? '正在評估財務體質' : assessmentStatus === 'error' ? '評估暫不可用' : financialAssessment?.label ?? '等待財務資料'}</h3>
+                  <p>
+                    {assessmentStatus === 'loading'
+                      ? '正在查詢財務指標、損益、資產負債與現金流資料。'
+                      : assessmentStatus === 'error'
+                        ? assessmentError
+                        : financialAssessment
+                          ? `資料完整度 ${financialAssessment.completeness}% · ${financialAssessment.asOf} · 固定門檻評估，非同業百分位`
+                          : '尚未完成財務綜合評估。'}
+                  </p>
+                </div>
               </div>
               <div className="score-bars">
-                {company.scores.map((score) => <div key={score.label}><span>{score.label}</span><div><i style={{ width: `${score.value}%` }} /></div><b>{score.value}</b></div>)}
+                {financialAssessment?.dimensions.map((dimension) => <div key={dimension.label} title={dimension.note}><span>{dimension.label}</span><div><i style={{ width: `${dimension.score ?? 0}%` }} /></div><b>{dimension.score ?? '—'}</b></div>)}
+                {assessmentStatus === 'error' && <button className="text-link" onClick={() => void refreshFinancialAssessment()}><RefreshCw size={13} />重新評估</button>}
               </div>
+              {financialAssessment?.summary && <p className="source-note">{financialAssessment.summary}</p>}
             </article>
 
             <article className="brief-card panel">
@@ -922,7 +1002,7 @@ function App() {
             <div className="section-title"><div><span>FINANCIAL PULSE</span><h2>財務脈動</h2><p>核心財務指標與近六季表現</p></div><label className="period-button"><CalendarDays size={15} /><select value={financialPeriod} onChange={(event) => setFinancialPeriod(event.target.value as FinancialPeriod)} aria-label="選擇財務資料期間">{financialPeriods.map((period) => <option value={period.value} key={period.value}>{period.label}</option>)}</select><ChevronDown size={14} /></label></div>
             <TwseMarketSnapshot company={company} />
             <Suspense fallback={<div className="h-[620px] animate-pulse rounded-3xl border border-[#dcdad3] bg-[#f8f7f3]" role="status" aria-label="載入財務圖表" />}>
-              <AdvancedStats company={company} metrics={displayedMetrics} periodLabel={selectedPeriod.label} />
+              <AdvancedStats company={company} metrics={displayedMetrics} periodLabel={selectedPeriod.label} assessmentStatus={assessmentStatus} />
             </Suspense>
           </section>
 

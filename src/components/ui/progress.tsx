@@ -5,44 +5,40 @@ import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 
 
 import { cn } from '@/lib/utils'
 
-interface Vo2MaxCardProps {
-  /** The main title of the card. */
+interface FinancialGaugeCardProps {
   title: string
-  /** The primary percentage value to display. */
-  value: number
-  /** The benchmark label shown beside the value. */
+  value: number | null
   status: string
-  /** The small uppercase label above the title. */
   description: React.ReactNode
-  /** The percentage represented by the gauge needle. */
-  progress: number
-  /** An icon displayed in the top-right corner. */
+  progress: number | null
   icon: React.ReactNode
-  /** Optional classes merged with the card styles. */
+  unit?: string
   className?: string
-  /** Uses the lighter, sidebar-sized presentation. */
   compact?: boolean
 }
 
-export const Vo2MaxCard: React.FC<Vo2MaxCardProps> = ({
+export const FinancialGaugeCard: React.FC<FinancialGaugeCardProps> = ({
   title,
   value,
   status,
   description,
   progress,
   icon,
+  unit = '分',
   className,
   compact = false,
 }) => {
   const reduceMotion = useReducedMotion()
-  const count = useMotionValue(reduceMotion ? value : 0)
+  const safeValue = value ?? 0
+  const safeProgress = progress ?? 0
+  const count = useMotionValue(reduceMotion ? safeValue : 0)
   const rounded = useTransform(count, (latest) => Math.round(latest))
-  const clampedProgress = Math.min(Math.max(progress, 0), 100)
+  const clampedProgress = Math.min(Math.max(safeProgress, 0), 100)
   const needleRotation = -90 + clampedProgress * 1.8
 
   React.useEffect(() => {
     const duration = reduceMotion ? 0 : 1.25
-    const valueAnimation = animate(count, value, {
+    const valueAnimation = animate(count, safeValue, {
       duration,
       ease: [0.43, 0.13, 0.23, 0.96],
     })
@@ -50,7 +46,7 @@ export const Vo2MaxCard: React.FC<Vo2MaxCardProps> = ({
     return () => {
       valueAnimation.stop()
     }
-  }, [count, reduceMotion, value])
+  }, [count, reduceMotion, safeValue])
 
   return (
     <div
@@ -82,17 +78,11 @@ export const Vo2MaxCard: React.FC<Vo2MaxCardProps> = ({
           className={cn('mx-auto w-full overflow-visible', compact ? 'max-w-[205px]' : 'max-w-[270px]')}
           role="progressbar"
           aria-label={title}
-          aria-valuenow={progress}
+          aria-valuenow={progress ?? undefined}
           aria-valuemin={0}
           aria-valuemax={100}
         >
-          <path
-            d="M 30 120 A 100 100 0 0 1 230 120"
-            fill="none"
-            stroke="rgba(255,255,255,.14)"
-            strokeWidth="13"
-            strokeLinecap="round"
-          />
+          <path d="M 30 120 A 100 100 0 0 1 230 120" fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="13" strokeLinecap="round" />
           <motion.path
             d="M 30 120 A 100 100 0 0 1 230 120"
             fill="none"
@@ -127,10 +117,10 @@ export const Vo2MaxCard: React.FC<Vo2MaxCardProps> = ({
 
         <div className={cn('flex items-end justify-between', compact ? '-mt-1 gap-2' : 'mt-1 gap-4')}>
           <div className="flex items-end leading-none">
-            <motion.span className={cn('font-bold tracking-[-0.06em]', compact ? 'text-4xl' : 'text-5xl sm:text-6xl')}>
-              {rounded}
-            </motion.span>
-            <span className={cn('pb-0.5 font-bold tracking-[-0.04em]', compact ? 'text-xl' : 'text-2xl sm:text-3xl')}>%</span>
+            {value === null
+              ? <span className={cn('font-bold tracking-[-0.06em]', compact ? 'text-4xl' : 'text-5xl sm:text-6xl')}>--</span>
+              : <motion.span className={cn('font-bold tracking-[-0.06em]', compact ? 'text-4xl' : 'text-5xl sm:text-6xl')}>{rounded}</motion.span>}
+            <span className={cn('pb-0.5 font-bold tracking-[-0.04em]', compact ? 'text-base' : 'text-xl sm:text-2xl')}>{unit}</span>
           </div>
           <span className={cn('mb-0.5 rounded-full border border-white/20 bg-white/10 font-bold tracking-wide text-white', compact ? 'px-2.5 py-1 text-[9px]' : 'px-3 py-1.5 text-[10px] sm:text-xs')}>
             {status}

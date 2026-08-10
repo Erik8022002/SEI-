@@ -1,23 +1,13 @@
 name: Inspect TWSE financial fields
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'scripts/inspect-financial-fields.mjs'
-      - '.github/workflows/inspect-financial-fields.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  inspect:
+  archived:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Inspect official TWSE fields
-        run: node scripts/inspect-financial-fields.mjs
+      - run: echo 'One-off TWSE inspection completed; workflow disabled.'

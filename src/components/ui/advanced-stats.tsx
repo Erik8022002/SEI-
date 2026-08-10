@@ -5,7 +5,7 @@ import { ArrowDownRight, ArrowUpRight, Gauge, TrendingUp } from 'lucide-react'
 
 import { ClippedAreaChart } from '@/components/ui/advanced-stats-utils/charts'
 import { TimelineAnimation } from '@/components/ui/advanced-stats-utils/timeline-animation'
-import { Vo2MaxCard } from '@/components/ui/progress'
+import { FinancialGaugeCard } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { companies, type Company, type FinancialMetric } from '@/data'
 
@@ -13,6 +13,7 @@ type AdvancedStatsProps = {
   company?: Company
   metrics?: FinancialMetric[]
   periodLabel?: string
+  assessmentStatus?: 'idle' | 'loading' | 'ready' | 'error'
 }
 
 function formatMetric(metric: FinancialMetric) {
@@ -29,10 +30,17 @@ export default function AdvancedStats({
   company = companies[0],
   metrics = company.metrics,
   periodLabel = '近一年',
+  assessmentStatus = 'ready',
 }: AdvancedStatsProps) {
   const timelineRef = useRef<HTMLDivElement>(null)
-  const growthScore = company.scores.find((score) => score.label === '成長動能')?.value ?? company.score
-  const revenueDelta = company.metrics[0]?.delta ?? 0
+  const growthScore = company.scores.find((score) => score.label === '獲利與成長')?.value ?? null
+  const revenueDelta = company.metrics[0]?.delta ?? null
+  const assessmentReady = assessmentStatus === 'ready' && company.score > 0
+  const gaugeStatus = assessmentStatus === 'loading'
+    ? '評估中'
+    : assessmentStatus === 'error'
+      ? '暫不可用'
+      : company.scoreLabel || '資料不足'
 
   return (
     <section
@@ -99,17 +107,14 @@ export default function AdvancedStats({
           </TimelineAnimation>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 lg:content-start">
-            <TimelineAnimation
-              animationNum={2}
-              timelineRef={timelineRef}
-              className="h-full sm:col-span-1"
-            >
-              <Vo2MaxCard
-                title="財務健診達成度"
-                value={company.score}
-                progress={company.score}
-                status="目標 85%"
-                description="Financial benchmark"
+            <TimelineAnimation animationNum={2} timelineRef={timelineRef} className="h-full sm:col-span-1">
+              <FinancialGaugeCard
+                title="財務綜合評估"
+                value={assessmentReady ? company.score : null}
+                progress={assessmentReady ? company.score : null}
+                status={gaugeStatus}
+                description="Evidence-based score"
+                unit="分"
                 icon={<Gauge size={27} strokeWidth={1.7} aria-hidden="true" />}
                 compact
                 className="h-full"
@@ -126,17 +131,18 @@ export default function AdvancedStats({
                   <TrendingUp size={16} aria-hidden="true" />
                 </div>
                 <div>
-                  <p className="text-[8px] font-bold uppercase tracking-[0.16em] text-[#a37845]">Growth signal</p>
-                  <h3 className="text-sm font-bold text-[#14201c]">成長動能</h3>
+                  <p className="text-[8px] font-bold uppercase tracking-[0.16em] text-[#a37845]">Profit & growth</p>
+                  <h3 className="text-sm font-bold text-[#14201c]">獲利與成長</h3>
                 </div>
               </div>
-              <p className="text-xs leading-5 text-[#717b77]">
-                營收同期變化{' '}
-                <span className={cn('font-bold', revenueDelta >= 0 ? 'text-emerald-700' : 'text-rose-600')}>
-                  {revenueDelta >= 0 ? '+' : ''}{revenueDelta}%
-                </span>
-                ，成長動能評分為 <span className="font-bold text-[#14201c]">{growthScore} 分</span>。
-              </p>
+              {growthScore === null ? (
+                <p className="text-xs leading-5 text-[#717b77]">目前沒有足夠且期間一致的資料，因此不以總分代替獲利與成長構面。</p>
+              ) : (
+                <p className="text-xs leading-5 text-[#717b77]">
+                  {revenueDelta === null ? '營收年增率暫無資料' : <>營收同期變化{' '}<span className={cn('font-bold', revenueDelta >= 0 ? 'text-emerald-700' : 'text-rose-600')}>{revenueDelta >= 0 ? '+' : ''}{revenueDelta}%</span></>}
+                  ，獲利與成長構面為 <span className="font-bold text-[#14201c]">{growthScore} 分</span>。
+                </p>
+              )}
             </TimelineAnimation>
           </div>
         </div>

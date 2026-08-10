@@ -689,7 +689,7 @@ function App() {
   }
 
   const exportCompanyReport = async () => {
-  const prompt = `財務指標、綜合損益表、資產負債表、現金流量表，生成${company.name}的財務報告`
+  const prompt = `查詢${company.name}綜合損益表、資產負債表、現金流量表三個表，生成${company.name}的財務報告`
   const headers = {
     'Authorization': `Bearer ${PROJECT_TOKEN}`,
     'x-application-tenant': PROJECT_ID,

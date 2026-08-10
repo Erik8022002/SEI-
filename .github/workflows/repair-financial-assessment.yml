@@ -26,8 +26,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: TypeScript check
         run: npx tsc -p tsconfig.app.json --noEmit
-      - name: Production build
-        run: npm run build
+      - name: Production bundle check
+        run: npx vite build
       - name: Commit repaired App
         shell: bash
         run: |

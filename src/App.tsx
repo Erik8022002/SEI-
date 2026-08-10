@@ -3,7 +3,7 @@ import {
   ArrowRight, Bot, Building2, CalendarDays,
   Check, ChevronDown, CircleAlert, Clock3, Copy, Download, ExternalLink,
   FileChartColumn, FileText, History, Landmark, MapPin, Menu, MessageSquareText,
-  Presentation, RefreshCw, Search, Send, ShieldCheck, Sparkles, Target, TrendingUp,
+  Presentation, RefreshCw, Search, Send, Sparkles, Target, TrendingUp,
   Video, X,
 } from 'lucide-react'
 import {
@@ -19,6 +19,11 @@ import remarkGfm from 'remark-gfm'
 import { TwseMarketSnapshot } from './components/twse-market-snapshot'
 import { fetchTwseCompanyByName } from './lib/twse-company'
 import { fetchTwseHistoricalEvents, mergeTwseHistoricalEvents } from './lib/twse-historical-events'
+import {
+  fetchCompanySignals,
+  type CompanySignals,
+  type CompanySignalsState,
+} from './lib/company-signals'
 
 type RawConference = Record<string, unknown>
 type ConferenceItem = {
@@ -60,7 +65,6 @@ const conferences: ConferenceItem[] = rawConferences.map((c) => {
 const conferenceCompanies = ((conferenceData as unknown) as { companies?: Array<{ code: string; name: string; conferenceCount: number; group?: string; note?: string }> }).companies ?? []
 
 const AdvancedStats = lazy(() => import('@/components/ui/advanced-stats'))
-type FinancialPeriod = 'quarter' | 'halfYear' | 'year'
 type EventMode = 'realtime' | 'history'
 type EventSyncStatus = 'refreshing' | 'official' | 'fallback'
 type CompanySyncStatus = 'idle' | 'loading' | 'official' | 'fallback'
@@ -78,12 +82,6 @@ type SearchHistoryItem = {
 const MATERIAL_EVENT_REFRESH_MS = 4 * 60 * 60 * 1000
 const SEARCH_HISTORY_KEY = 'compass-search-history-v1'
 
-const financialPeriods: { value: FinancialPeriod; label: string; quarters: number }[] = [
-  { value: 'quarter', label: '近一季', quarters: 1 },
-  { value: 'halfYear', label: '近半年', quarters: 2 },
-  { value: 'year', label: '近一年', quarters: 4 },
-]
-
 function buildMopsHistoricalNewsUrl(companyCode: string) {
   const query = new URLSearchParams({
     companyId: companyCode,
@@ -92,6 +90,53 @@ function buildMopsHistoricalNewsUrl(companyCode: string) {
   })
 
   return `https://mops.twse.com.tw/mops/#/web/t05st01?${query.toString()}`
+}
+
+function formatFinancialAmount(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return '資料不足'
+  const billions = value / 100000000
+  return `${billions.toLocaleString('zh-TW', { maximumFractionDigits: Math.abs(billions) < 100 ? 1 : 0 })} 億元`
+}
+
+function formatSignalPercent(value: number | null) {
+  return value === null || !Number.isFinite(value) ? '資料不足' : `${value.toLocaleString('zh-TW', { maximumFractionDigits: 1 })}%`
+}
+
+function formatNetLots(value: number) {
+  const lots = value / 1000
+  const sign = lots > 0 ? '+' : lots < 0 ? '−' : ''
+  return `${sign}${Math.abs(lots).toLocaleString('zh-TW', { maximumFractionDigits: 1 })} 張`
+}
+
+function buildSignalsText(signals: CompanySignals | null) {
+  if (!signals) return ['- FinMind 資料尚未載入']
+  const lines: string[] = []
+
+  if (signals.revenueTrend) {
+    const values = signals.revenueTrend.years.map((item) => `${item.year} 年 ${formatFinancialAmount(item.revenue)}`).join('；')
+    const growth = signals.revenueTrend.consecutiveGrowth === null
+      ? '完整年度不足三年'
+      : `連續成長：${signals.revenueTrend.consecutiveGrowth ? '是' : '否'}`
+    lines.push(`- 近三年營收：${values}（${growth}）`)
+  } else {
+    lines.push('- 近三年營收：資料不足')
+  }
+
+  if (signals.liquidity) {
+    const item = signals.liquidity
+    lines.push(`- 週轉與短期融資（${item.reportDate}）：營運資金 ${formatFinancialAmount(item.workingCapital)}；流動比率 ${formatSignalPercent(item.currentRatio)}；短期融資占比 ${formatSignalPercent(item.shortTermFinancingRatio)}；現金流量比率 ${formatSignalPercent(item.cashFlowRatio)}`)
+  } else {
+    lines.push('- 週轉與短期融資：資料不足')
+  }
+
+  const institutional = signals.institutionalTrend?.windows.find((item) => item.requestedDays === 20)
+  if (institutional) {
+    lines.push(`- 三大法人最近 ${institutional.actualDays} 個交易日：合計 ${formatNetLots(institutional.total)}；外資 ${formatNetLots(institutional.foreign)}；投信 ${formatNetLots(institutional.investmentTrust)}；自營商 ${formatNetLots(institutional.dealer)}`)
+  } else {
+    lines.push('- 三大法人買賣趨勢：資料不足')
+  }
+
+  return lines
 }
 
 function readSearchHistory() {
@@ -187,7 +232,6 @@ function buildCompanyReport(company: Company, currentEvents: MaterialEvent[]) {
     `- 所在地：${company.location}`,
     `- 成立年份：${company.founded}`,
     `- 實收資本額：${company.capital}`,
-    `- 員工人數：${company.employees}`,
     `- 官方網站：${company.website}`,
     '',
     '## 企業速覽',
@@ -253,11 +297,46 @@ function App() {
   const [exported, setExported] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [strategyMetricIds, setStrategyMetricIds] = useState(['revenue', 'grossMargin', 'debtRatio', 'currentRatio', 'eps'])
-  const [financialPeriod, setFinancialPeriod] = useState<FinancialPeriod>('year')
   const [companySyncStatus, setCompanySyncStatus] = useState<CompanySyncStatus>('idle')
+  const [companySignals, setCompanySignals] = useState<CompanySignalsState>({
+    status: 'idle',
+    data: null,
+    message: '開啟戰略卡後同步 FinMind 真實資料',
+  })
   const searchRef = useRef<HTMLDivElement>(null)
   const companyLookupControllerRef = useRef<AbortController | null>(null)
   const materialEvents = useMaterialEvents(company)
+
+  useEffect(() => {
+    if (!strategyOpen || !company.ticker || !['上市', '上櫃'].includes(company.market)) return
+    const controller = new AbortController()
+
+    setCompanySignals((current) => ({
+      status: 'loading',
+      data: current.data?.ticker === company.ticker ? current.data : null,
+      message: '正在同步 FinMind 歷史財務與三大法人資料',
+    }))
+
+    void fetchCompanySignals(company, controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return
+        setCompanySignals({
+          status: 'ready',
+          data,
+          message: data.status === 'official' ? 'FinMind 真實資料已同步' : data.status === 'partial' ? '部分資料可用' : '目前查無可用資料',
+        })
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setCompanySignals({
+          status: 'error',
+          data: null,
+          message: error instanceof Error ? error.message : 'FinMind 資料同步失敗',
+        })
+      })
+
+    return () => controller.abort()
+  }, [strategyOpen, company.ticker, company.market])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -295,15 +374,6 @@ function App() {
   const visibleHistoricalEvents = eventFilter === '全部'
     ? company.historicalEvents
     : company.historicalEvents.filter((event) => event.category === eventFilter)
-  const selectedPeriod = financialPeriods.find((period) => period.value === financialPeriod) ?? financialPeriods[2]
-  const periodTrend = company.trend.slice(-selectedPeriod.quarters)
-  const displayedMetrics = company.metrics.map((metric, index) => index < 2 && periodTrend.length > 0 ? {
-    ...metric,
-    label: `${selectedPeriod.label}${index === 0 ? '營收' : '稅後淨利'}`,
-    value: periodTrend.reduce((total, point) => total + (index === 0 ? point.revenue : point.profit), 0),
-    note: '同期比較',
-  } : metric)
-
   useEffect(() => {
     const close = (event: MouseEvent) => {
       if (!searchRef.current?.contains(event.target as Node)) setSearchOpen(false)
@@ -374,7 +444,6 @@ function App() {
     setEventMode('realtime')
     setEventFilter('全部')
     setStrategyMetricIds(['revenue', 'grossMargin', 'debtRatio', 'currentRatio', 'eps'])
-    setFinancialPeriod('year')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -580,7 +649,28 @@ function App() {
   
 
   const selectedStrategyMetrics = company.strategyMetrics.filter((metric) => strategyMetricIds.includes(metric.id))
-  const strategyText = `【${company.name}｜拜訪戰略卡】\n公司速覽：${company.summary}\n財務體質：${selectedStrategyMetrics.map((metric) => `${metric.label} ${metric.value}`).join('；')}\n切入機會：${company.opportunities.join('；')}\n風險觀察：${company.risks.join('；')}\n建議提問：${company.questions.join('；')}`
+  const strategyFinancialText = selectedStrategyMetrics.length > 0
+    ? selectedStrategyMetrics.map((metric) => `${metric.label} ${metric.value}`).join('；')
+    : '資料不足'
+  const strategyEventText = materialEvents.events.length > 0
+    ? materialEvents.events.slice(0, 5).map((event) => `- ${event.date}｜${event.title}`).join('\n')
+    : '- 近 14 日無重大訊息或官方資料尚未完成同步'
+  const strategyText = [
+    `【${company.name}｜拜訪戰略卡】`,
+    `資料產生時間：${new Date().toLocaleString('zh-TW')}`,
+    `公司速覽：${company.summary}`,
+    `財務體質：${strategyFinancialText}`,
+    '',
+    '三項數據觀察（FinMind）：',
+    ...buildSignalsText(companySignals.data),
+    '',
+    '重大訊息觀察（公開資訊觀測站）：',
+    strategyEventText,
+    '',
+    '建議探詢：請向企業確認營運資金規劃、短期融資配置，以及重大訊息揭露事項的實際影響。',
+    '',
+    '說明：本卡僅呈現外部資料與透明公式，未使用推估值或自動生成企業事實。',
+  ].join('\n')
 
   const copyStrategy = async () => {
     await navigator.clipboard.writeText(strategyText)
@@ -845,36 +935,22 @@ function App() {
           </section>
 
           <section className="overview-grid reveal">
-            <article className="score-card panel">
-              <div className="panel-kicker">FINANCIAL HEALTH</div>
-              <div className="score-main">
-                <div className="score-ring" style={{ '--score': company.score } as React.CSSProperties}>
-                  <div><strong>{company.score}</strong><small>/ 100</small></div>
-                </div>
-                <div className="score-copy"><span><ShieldCheck size={16} /> 綜合評估</span><h3>{company.scoreLabel}</h3><p>優於同產業 <b>{Math.min(company.score - 11, 96)}%</b> 的企業</p></div>
-              </div>
-              <div className="score-bars">
-                {company.scores.map((score) => <div key={score.label}><span>{score.label}</span><div><i style={{ width: `${score.value}%` }} /></div><b>{score.value}</b></div>)}
-              </div>
-            </article>
-
             <article className="brief-card panel">
               <div className="panel-head"><div><div className="panel-kicker">COMPANY BRIEF</div><h3>企業速覽</h3></div><FileChartColumn size={21} /></div>
               <p className="brief-summary">{company.summary}</p>
               <div className="facts">
                 <div><span>成立年份</span><b>{company.founded}</b></div>
                 <div><span>實收資本額</span><b>{company.capital}</b></div>
-                <div><span>員工人數</span><b>{company.employees}</b></div>
               </div>
               <a className="text-link company-website-link" href={company.website} target="_blank" rel="noreferrer">查看完整公司資料 <ExternalLink size={14} /></a>
             </article>
           </section>
 
           <section id="financial" className="section-block reveal">
-            <div className="section-title"><div><span>FINANCIAL PULSE</span><h2>財務脈動</h2><p>核心財務指標與近六季表現</p></div><label className="period-button"><CalendarDays size={15} /><select value={financialPeriod} onChange={(event) => setFinancialPeriod(event.target.value as FinancialPeriod)} aria-label="選擇財務資料期間">{financialPeriods.map((period) => <option value={period.value} key={period.value}>{period.label}</option>)}</select><ChevronDown size={14} /></label></div>
+            <div className="section-title"><div><span>FINANCIAL PULSE</span><h2>財務脈動</h2><p>TWSE 官方市場資料與核心財務指標</p></div></div>
             <TwseMarketSnapshot company={company} />
-            <Suspense fallback={<div className="h-[620px] animate-pulse rounded-3xl border border-[#dcdad3] bg-[#f8f7f3]" role="status" aria-label="載入財務圖表" />}>
-              <AdvancedStats company={company} metrics={displayedMetrics} periodLabel={selectedPeriod.label} />
+            <Suspense fallback={<div className="h-[132px] animate-pulse rounded-3xl border border-[#dcdad3] bg-[#f8f7f3]" role="status" aria-label="載入財務指標" />}>
+              <AdvancedStats company={company} metrics={company.metrics} />
             </Suspense>
           </section>
 
@@ -1003,7 +1079,7 @@ function App() {
 
       <footer><div className="brand footer-brand"><span className="brand-mark"><Landmark size={16} /></span><span><b>商析</b><small>COMPASS</small></span></div><p>資料僅供參考，不構成任何投資或授信建議。</p><span>© 2026 Financial Intelligence Lab</span></footer>
 
-      {strategyOpen && <StrategyModal company={company} metricIds={strategyMetricIds} setMetricIds={setStrategyMetricIds} close={() => setStrategyOpen(false)} copy={copyStrategy} download={downloadStrategy} copied={copied} />}
+      {strategyOpen && <StrategyModal company={company} metricIds={strategyMetricIds} setMetricIds={setStrategyMetricIds} signals={companySignals} materialEvents={materialEvents.events} close={() => setStrategyOpen(false)} copy={copyStrategy} download={downloadStrategy} copied={copied} />}
       {historyOpen && <HistoryModal company={company} close={() => setHistoryOpen(false)} />}
     </div>
   )
@@ -1219,34 +1295,92 @@ function HistoryModal({ company, close }: { company: Company; close: () => void 
   </div>
 }
 
-function StrategyModal({ company, metricIds, setMetricIds, close, copy, download, copied }: { company: Company; metricIds: string[]; setMetricIds: React.Dispatch<React.SetStateAction<string[]>>; close: () => void; copy: () => void; download: () => void; copied: boolean }) {
+function StrategyModal({ company, metricIds, setMetricIds, signals, materialEvents, close, copy, download, copied }: { company: Company; metricIds: string[]; setMetricIds: React.Dispatch<React.SetStateAction<string[]>>; signals: CompanySignalsState; materialEvents: MaterialEvent[]; close: () => void; copy: () => void; download: () => void; copied: boolean }) {
   const toggleMetric = (id: string) => {
     setMetricIds((current) => current.includes(id) ? current.filter((metricId) => metricId !== id) : current.length < 5 ? [...current, id] : current)
   }
 
+  const revenueTrend = signals.data?.revenueTrend ?? null
+  const liquidity = signals.data?.liquidity ?? null
+  const fiveDayInstitutional = signals.data?.institutionalTrend?.windows.find((item) => item.requestedDays === 5) ?? null
+  const twentyDayInstitutional = signals.data?.institutionalTrend?.windows.find((item) => item.requestedDays === 20) ?? null
+  const signalSourceUrl = signals.data?.source.url ?? 'https://finmindtrade.com/'
+  const officialNewsUrl = buildMopsHistoricalNewsUrl(company.ticker)
+
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) close() }}>
     <div className="strategy-modal" role="dialog" aria-modal="true" aria-label="拜訪戰略卡">
       <div className="modal-head"><div><span>VISIT BRIEF · {new Date().toLocaleDateString('zh-TW')}</span><h2>{company.name}</h2><p>關鍵客戶拜訪戰略卡</p></div><button onClick={close}><X size={20} /></button></div>
-      <div className="strategy-score"><div className="mini-score"><strong>{company.score}</strong><span>財務評分</span></div><p>{company.summary}</p></div>
-      <section className="strategy-metrics-section">
-        <div className="strategy-metrics-head"><div><span>FINANCIAL SNAPSHOT</span><h3>財務體質快照</h3></div><small>選擇顯示指標 · 最多 5 項</small></div>
-        <div className="metric-selector">
-          {company.strategyMetrics.map((metric) => {
-            const selected = metricIds.includes(metric.id)
-            return <button key={metric.id} className={selected ? 'selected' : ''} disabled={!selected && metricIds.length >= 5} onClick={() => toggleMetric(metric.id)}><span>{selected && <Check size={11} />}</span>{metric.label}</button>
-          })}
+      {company.summary && company.summary !== '無公司簡介資料' && (
+        <div className="strategy-summary">
+          <span>COMPANY BRIEF</span>
+          <p>{company.summary}</p>
         </div>
-        <div className="strategy-metric-grid">
-          {company.strategyMetrics.filter((metric) => metricIds.includes(metric.id)).map((metric) => <article key={metric.id}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.note}</small></article>)}
-          {metricIds.length === 0 && <p className="no-metrics">請至少選擇一項財務指標。</p>}
-        </div>
-      </section>
-      <div className="strategy-columns">
-        <section><h3><TrendingUp size={17} /> 三個切入機會</h3>{company.opportunities.map((item, index) => <div className="strategy-point" key={item}><b>0{index + 1}</b><span>{item}</span></div>)}</section>
-        <section><h3><CircleAlert size={17} /> 風險與觀察</h3>{company.risks.map((item) => <div className="risk-point" key={item}><i /><span>{item}</span></div>)}</section>
+      )}
+      {company.strategyMetrics.length > 0 && <section className="strategy-metrics-section">
+          <div className="strategy-metrics-head"><div><span>FINANCIAL SNAPSHOT</span><h3>財務體質快照</h3></div><small>選擇顯示指標 · 最多 5 項</small></div>
+          <div className="metric-selector">
+            {company.strategyMetrics.map((metric) => {
+              const selected = metricIds.includes(metric.id)
+              return <button key={metric.id} className={selected ? 'selected' : ''} disabled={!selected && metricIds.length >= 5} onClick={() => toggleMetric(metric.id)}><span>{selected && <Check size={11} />}</span>{metric.label}</button>
+            })}
+          </div>
+          <div className="strategy-metric-grid">
+            {company.strategyMetrics.filter((metric) => metricIds.includes(metric.id)).map((metric) => <article key={metric.id}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.note}</small></article>)}
+            {metricIds.length === 0 && <p className="no-metrics">請至少選擇一項財務指標。</p>}
+          </div>
+        </section>}
+
+      <div className="strategy-evidence-grid">
+        <section className="strategy-evidence-panel" aria-labelledby="data-observations-title">
+          <div className="evidence-panel-head">
+            <div><span>VERIFIED DATA SIGNALS</span><h3 id="data-observations-title"><TrendingUp size={16} /> 三項數據觀察</h3></div>
+            <a href={signalSourceUrl} target="_blank" rel="noreferrer">FinMind <ExternalLink size={10} /></a>
+          </div>
+          <p className={`signal-sync-state ${signals.status}`}>{signals.status === 'loading' && <RefreshCw size={11} />}{signals.message}</p>
+          <div className="signal-card-list">
+            <article className="signal-card">
+              <header><b>01</b><div><strong>近三年營收</strong><small>完整年度月營收加總</small></div></header>
+              {revenueTrend ? <>
+                <div className="revenue-year-grid">
+                  {revenueTrend.years.map((item) => <div key={item.year}><span>{item.year}</span><strong>{formatFinancialAmount(item.revenue)}</strong><small>{item.yoy === null ? '基準年度' : `年增 ${item.yoy > 0 ? '+' : ''}${item.yoy.toLocaleString('zh-TW', { maximumFractionDigits: 1 })}%`}</small></div>)}
+                </div>
+                <p>{revenueTrend.consecutiveGrowth === null ? '完整年度不足三年，暫不判定連續趨勢。' : `連續兩年營收成長：${revenueTrend.consecutiveGrowth ? '是' : '否'}`}</p>
+              </> : <p className="signal-empty">FinMind 尚無三個完整年度的月營收資料。</p>}
+            </article>
+
+            <article className="signal-card">
+              <header><b>02</b><div><strong>週轉與短期融資</strong><small>{liquidity ? `${liquidity.reportDate} 財報` : '最新可用財報'}</small></div></header>
+              {liquidity ? <div className="liquidity-signal-grid">
+                <div><span>營運資金</span><strong>{formatFinancialAmount(liquidity.workingCapital)}</strong><small>流動資產－流動負債</small></div>
+                <div><span>流動比率</span><strong>{formatSignalPercent(liquidity.currentRatio)}</strong><small>流動資產／流動負債</small></div>
+                <div><span>短期融資占比</span><strong>{formatSignalPercent(liquidity.shortTermFinancingRatio)}</strong><small>短期融資／流動負債</small></div>
+                <div><span>現金流量比率</span><strong>{formatSignalPercent(liquidity.cashFlowRatio)}</strong><small>營業現金流／流動負債</small></div>
+              </div> : <p className="signal-empty">FinMind 尚無計算四項公式所需的完整財報欄位。</p>}
+            </article>
+
+            <article className="signal-card">
+              <header><b>03</b><div><strong>三大法人買賣趨勢</strong><small>{signals.data?.institutionalTrend?.asOf ? `截至 ${signals.data.institutionalTrend.asOf}` : '逐日實際買賣超'}</small></div></header>
+              {twentyDayInstitutional ? <>
+                <div className="institution-summary"><span>近 {twentyDayInstitutional.actualDays} 個交易日合計</span><strong className={twentyDayInstitutional.total >= 0 ? 'positive' : 'negative'}>{formatNetLots(twentyDayInstitutional.total)}</strong></div>
+                <div className="institution-breakdown"><span>外資 {formatNetLots(twentyDayInstitutional.foreign)}</span><span>投信 {formatNetLots(twentyDayInstitutional.investmentTrust)}</span><span>自營商 {formatNetLots(twentyDayInstitutional.dealer)}</span>{fiveDayInstitutional && <span>近 {fiveDayInstitutional.actualDays} 日 {formatNetLots(fiveDayInstitutional.total)}</span>}</div>
+              </> : <p className="signal-empty">FinMind 尚無最近交易日的三大法人買賣資料。</p>}
+            </article>
+          </div>
+          <p className="verified-data-note"><Check size={11} /> 僅呈現來源數據與透明公式，不使用推估值。</p>
+        </section>
+
+        <section className="material-observation-panel" aria-labelledby="material-observation-title">
+          <div className="evidence-panel-head"><div><span>OFFICIAL DISCLOSURES</span><h3 id="material-observation-title"><CircleAlert size={16} /> 重大訊息觀察</h3></div></div>
+          <p className="material-observation-intro">直接引用公開資訊觀測站公告，不進行正負面推測。</p>
+          <div className="material-observation-list">
+            {materialEvents.slice(0, 4).map((event) => <article key={`${event.date}-${event.title}`}><time>{event.date}</time><h4>{event.title}</h4></article>)}
+            {materialEvents.length === 0 && <p className="signal-empty">近 14 日無重大訊息，或官方資料仍在同步。</p>}
+          </div>
+          <a className="official-news-link" href={officialNewsUrl} target="_blank" rel="noreferrer">查看官方重大訊息 <ExternalLink size={11} /></a>
+        </section>
       </div>
-      <section className="opening-script"><span>RECOMMENDED OPENING</span><h3>建議開場與探詢</h3><p>「我們觀察到貴公司近期在{company.opportunities[0]}方面有明顯進展，想進一步了解目前的資金配置與營運需求，以及我們是否有機會提供更靈活的支援。」</p></section>
-      <div className="question-chips">{company.questions.map((item) => <span key={item}><Check size={13} />{item}</span>)}</div>
+      <section className="opening-script"><span>RECOMMENDED OPENING</span><h3>建議開場與探詢</h3><p>「想就貴公司近三年營運表現、週轉資金配置與近期重大訊息進一步了解，請問目前資金規劃上最需要金融機構協助的項目為何？」</p></section>
+      {company.questions.length > 0 && <div className="question-chips">{company.questions.map((item) => <span key={item}><Check size={13} />{item}</span>)}</div>}
       <div className="modal-actions"><button className="secondary" onClick={copy}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? '已複製' : '複製內容'}</button><button className="primary" onClick={download}><Download size={16} /> 下載戰略卡</button></div>
     </div>
   </div>

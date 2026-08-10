@@ -94,21 +94,22 @@ function normalizeMetric(metric: Partial<FinancialMetric>): FinancialMetric {
 export function normalizeCompany(raw: Partial<Company> | Record<string, unknown>): Company {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_COMPANY, id: `company-${Date.now()}` }
 
-  const id = String(raw.id || raw.ticker || raw['公司代號'] || `company-${Math.random().toString(36).slice(2, 9)}`)
-  const name = String(raw.name || raw['公司名稱'] || raw['公司簡稱'] || DEFAULT_COMPANY.name)
-  const englishName = String(raw.englishName || raw['英文簡稱'] || '')
-  const website = String(raw.website || raw['網址'] || '')
-  const ticker = String(raw.ticker || raw['公司代號'] || raw.code || '')
-  const taxId = String(raw.taxId || raw['營利事業統一編號'] || '')
-  const industry = String(raw.industry || raw['產業別'] || DEFAULT_COMPANY.industry)
-  const market = String(raw.market || (raw['上市日期'] ? '上市' : '上櫃') || DEFAULT_COMPANY.market)
-  const location = String(raw.location || raw['住址'] || '')
-  const founded = String(raw.founded || raw['成立日期'] || '')
-  const employees = String(raw.employees || '')
-  const capital = String(raw.capital || raw['實收資本額'] || '')
-  const score = typeof raw.score === 'number' ? raw.score : 0
-  const scoreLabel = String(raw.scoreLabel || (raw.score ? `綜合得分 ${raw.score}` : DEFAULT_COMPANY.scoreLabel))
-  const summary = String(raw.summary || DEFAULT_COMPANY.summary)
+  const source = raw as Partial<Company> & Record<string, unknown>
+  const id = String(source.id || source.ticker || source['公司代號'] || `company-${Math.random().toString(36).slice(2, 9)}`)
+  const name = String(source.name || source['公司名稱'] || source['公司簡稱'] || DEFAULT_COMPANY.name)
+  const englishName = String(source.englishName || source['英文簡稱'] || '')
+  const website = String(source.website || source['網址'] || '')
+  const ticker = String(source.ticker || source['公司代號'] || source.code || '')
+  const taxId = String(source.taxId || source['營利事業統一編號'] || '')
+  const industry = String(source.industry || source['產業別'] || DEFAULT_COMPANY.industry)
+  const market = String(source.market || (source['上市日期'] ? '上市' : '上櫃') || DEFAULT_COMPANY.market)
+  const location = String(source.location || source['住址'] || '')
+  const founded = String(source.founded || source['成立日期'] || '')
+  const employees = String(source.employees || '')
+  const capital = String(source.capital || source['實收資本額'] || '')
+  const score = typeof source.score === 'number' ? source.score : 0
+  const scoreLabel = String(source.scoreLabel || (source.score ? `綜合得分 ${source.score}` : DEFAULT_COMPANY.scoreLabel))
+  const summary = String(source.summary || DEFAULT_COMPANY.summary)
 
   return {
     ...DEFAULT_COMPANY,
@@ -126,17 +127,17 @@ export function normalizeCompany(raw: Partial<Company> | Record<string, unknown>
     capital,
     score,
     scoreLabel,
-    updatedAt: String(raw.updatedAt || DEFAULT_COMPANY.updatedAt),
+    updatedAt: String(source.updatedAt || DEFAULT_COMPANY.updatedAt),
     summary,
-    metrics: Array.isArray(raw.metrics) ? raw.metrics.map(normalizeMetric) : [],
-    strategyMetrics: Array.isArray(raw.strategyMetrics) ? raw.strategyMetrics : [],
-    scores: Array.isArray(raw.scores) ? raw.scores : [],
-    trend: Array.isArray(raw.trend) ? raw.trend : [],
+    metrics: Array.isArray(source.metrics) ? source.metrics.map(normalizeMetric) : [],
+    strategyMetrics: Array.isArray(source.strategyMetrics) ? source.strategyMetrics : [],
+    scores: Array.isArray(source.scores) ? source.scores : [],
+    trend: Array.isArray(source.trend) ? source.trend : [],
     events: [],
-    historicalEvents: Array.isArray(raw.historicalEvents) ? raw.historicalEvents as HistoricalEvent[] : [],
-    opportunities: Array.isArray(raw.opportunities) ? raw.opportunities : [],
-    risks: Array.isArray(raw.risks) ? raw.risks : [],
-    questions: Array.isArray(raw.questions) ? raw.questions : [],
+    historicalEvents: Array.isArray(source.historicalEvents) ? source.historicalEvents as HistoricalEvent[] : [],
+    opportunities: Array.isArray(source.opportunities) ? source.opportunities : [],
+    risks: Array.isArray(source.risks) ? source.risks : [],
+    questions: Array.isArray(source.questions) ? source.questions : [],
   }
 }
 

@@ -1,19 +1,22 @@
 const base = 'https://openapi.twse.com.tw/v1/opendata'
-const endpoints = ['t187ap06_L_ci', 't187ap07_L_ci']
-const tickers = new Set(['2313', '1101', '2317'])
+const statementTypes = ['ci', 'mim', 'basi', 'bd', 'fh', 'ins']
+const tickers = ['2313', '1101', '2317']
 
-for (const endpoint of endpoints) {
-  const response = await fetch(`${base}/${endpoint}`, { headers: { Accept: 'application/json' } })
-  console.log(`\n=== ${endpoint} HTTP ${response.status} ===`)
-  if (!response.ok) continue
-  const rows = await response.json()
-  for (const ticker of tickers) {
-    const row = Array.isArray(rows) ? rows.find((item) => String(item['公司代號'] ?? item['公司代碼'] ?? item.Code ?? '').trim() === ticker) : null
-    console.log(`\n--- ${ticker} ---`)
-    if (!row) {
-      console.log('NOT FOUND')
-      continue
+for (const ticker of tickers) {
+  console.log(`\n################ ${ticker} ################`)
+  for (const statement of ['06', '07']) {
+    for (const type of statementTypes) {
+      const endpoint = `t187ap${statement}_L_${type}`
+      const response = await fetch(`${base}/${endpoint}`, { headers: { Accept: 'application/json' } })
+      if (!response.ok) {
+        console.log(`${endpoint}: HTTP ${response.status}`)
+        continue
+      }
+      const rows = await response.json()
+      const row = Array.isArray(rows) ? rows.find((item) => String(item['公司代號'] ?? item['公司代碼'] ?? item.Code ?? '').trim() === ticker) : null
+      if (!row) continue
+      console.log(`\n=== FOUND ${endpoint} ===`)
+      console.log(JSON.stringify(row, null, 2))
     }
-    console.log(JSON.stringify(row, null, 2))
   }
 }

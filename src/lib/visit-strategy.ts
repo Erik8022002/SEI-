@@ -44,6 +44,19 @@ function cleanText(value: unknown) {
   return String(value ?? '').replace(/\s+/g, ' ').trim()
 }
 
+function responseValueToText(value: unknown) {
+  if (typeof value === 'string') return value
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return String(value)
+    }
+  }
+  return String(value)
+}
+
 function normalizeStringList(value: unknown, max = 6) {
   if (!Array.isArray(value)) return []
   return value.map(cleanText).filter(Boolean).slice(0, max)
@@ -192,8 +205,8 @@ function parseSseText(raw: string) {
 
     try {
       const parsed = JSON.parse(body) as { result?: unknown; chunk?: unknown }
-      if (parsed.result !== undefined) finalResult = String(parsed.result)
-      else if (parsed.chunk !== undefined) chunks += String(parsed.chunk)
+      if (parsed.result !== undefined) finalResult = responseValueToText(parsed.result)
+      else if (parsed.chunk !== undefined) chunks += responseValueToText(parsed.chunk)
     } catch {
       // Ignore malformed partial SSE lines. The endpoint may still provide a final result later.
     }
@@ -203,7 +216,8 @@ function parseSseText(raw: string) {
 
   try {
     const parsed = JSON.parse(raw) as { result?: unknown; data?: { result?: unknown }; answer?: unknown }
-    return cleanText(parsed.result ?? parsed.data?.result ?? parsed.answer ?? raw)
+    const result = parsed.result ?? parsed.data?.result ?? parsed.answer
+    return result === undefined ? raw.trim() : responseValueToText(result).trim()
   } catch {
     return raw.trim()
   }
